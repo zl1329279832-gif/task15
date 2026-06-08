@@ -1,0 +1,55 @@
+# Build
+target/
+dist/
+build/
+*.min.js
+
+# Dependencies
+node_modules/
+package.json
+package-lock.json
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env
+.env
+*.env.local
+
+# Logs
+logs/
+*.log
+*.log.gz
+npm-debug.log*
+
+# Maven (legacy)
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Application
+application-local.yml
+
+# Temp
+*.tmp
+*.bak
+.cache/
