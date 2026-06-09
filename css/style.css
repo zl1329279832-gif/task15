@@ -25,10 +25,30 @@ body{display:flex;flex-direction:column}
 #main{flex:1;display:flex;overflow:hidden;position:relative}
 #canvasWrap{flex:1;position:relative;overflow:hidden;background:#080c20}
 #scene{display:block;width:100%;height:100%}
-#sceneBar{
-  position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
-  display:flex;gap:6px;z-index:5;
+
+/* ---- 控制栏容器 ---- */
+#controlBars{
+  position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;gap:6px;align-items:center;z-index:5;
 }
+
+/* ---- 模式按钮栏 ---- */
+#modeBar{display:flex;gap:4px}
+.mode-btn{
+  padding:5px 12px;border:1px solid var(--border);border-radius:4px;
+  background:rgba(13,18,48,.85);color:var(--text2);font-size:11px;
+  cursor:pointer;transition:all .2s;white-space:nowrap;
+  backdrop-filter:blur(4px);
+}
+.mode-btn:hover{border-color:var(--accent);color:var(--text)}
+.mode-btn.active{background:rgba(0,136,204,.6);border-color:var(--accent);color:#fff}
+.mode-btn.active[data-mode="paused"]{background:rgba(255,170,0,.5);border-color:var(--yellow);color:#fff}
+.mode-btn.active[data-mode="fault_sim"]{background:rgba(255,68,85,.4);border-color:var(--red);color:#fff}
+.mode-btn.reset-btn{border-color:rgba(255,68,85,.4);color:var(--red)}
+.mode-btn.reset-btn:hover{background:rgba(255,68,85,.2);border-color:var(--red)}
+
+/* ---- 场景按钮栏 ---- */
+#sceneBar{display:flex;gap:6px}
 .scene-btn{
   padding:6px 14px;border:1px solid var(--border);border-radius:4px;
   background:rgba(13,18,48,.85);color:var(--text2);font-size:12px;
@@ -37,6 +57,8 @@ body{display:flex;flex-direction:column}
 }
 .scene-btn:hover{border-color:var(--accent);color:var(--text)}
 .scene-btn.active{background:var(--accent2);border-color:var(--accent);color:#fff}
+
+/* ---- 侧面板 ---- */
 #panel{
   width:320px;flex-shrink:0;display:flex;flex-direction:column;
   background:var(--panel);border-left:1px solid var(--border);
@@ -46,9 +68,11 @@ body{display:flex;flex-direction:column}
 .panel-section h2{
   font-size:14px;color:var(--accent);margin-bottom:12px;
   padding-bottom:8px;border-bottom:1px solid var(--border);
-  letter-spacing:1px;
+  letter-spacing:1px;display:flex;align-items:center;justify-content:space-between;
 }
 .panel-placeholder{color:var(--text2);font-size:13px;text-align:center;padding:30px 0}
+
+/* ---- 设备信息 ---- */
 .eq-header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .eq-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px}
 .eq-name{font-size:15px;font-weight:600}
@@ -58,6 +82,11 @@ body{display:flex;flex-direction:column}
 .eq-state.fault{background:rgba(255,68,85,.15);color:var(--red)}
 .eq-state.maintenance{background:rgba(255,170,0,.15);color:var(--yellow)}
 .eq-state.offline{background:rgba(102,119,136,.2);color:var(--gray)}
+.eq-frame-info{
+  font-size:10px;color:var(--text2);font-family:var(--mono);
+  margin-bottom:10px;padding:3px 8px;
+  background:rgba(255,255,255,.03);border-radius:3px;display:inline-block;
+}
 .data-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .data-item{
   background:rgba(255,255,255,.03);border:1px solid var(--border);
@@ -68,31 +97,56 @@ body{display:flex;flex-direction:column}
 .data-unit{font-size:11px;color:var(--text2);margin-left:2px}
 .data-bar{height:3px;background:rgba(255,255,255,.06);border-radius:2px;margin-top:6px;overflow:hidden}
 .data-bar-fill{height:100%;border-radius:2px;transition:width .5s ease}
+
+/* ---- 报警列表 ---- */
+.alarm-hint{font-size:10px;color:var(--text2);font-weight:400}
 #alarmList{list-style:none}
 #alarmList li{
   padding:8px 10px;border-radius:4px;margin-bottom:4px;font-size:12px;
-  display:flex;align-items:flex-start;gap:8px;
-  border-left:3px solid transparent;
+  display:flex;align-items:center;gap:8px;
+  border-left:3px solid transparent;cursor:pointer;transition:background .15s;
 }
+#alarmList li:hover{background:rgba(255,255,255,.04)}
 #alarmList li.critical{background:rgba(255,68,85,.08);border-left-color:var(--red);color:var(--red)}
 #alarmList li.warning{background:rgba(255,170,0,.08);border-left-color:var(--yellow);color:var(--yellow)}
 #alarmList li.info{background:rgba(0,212,255,.06);border-left-color:var(--accent);color:var(--accent)}
 .alarm-time{font-size:10px;color:var(--text2);font-family:var(--mono);flex-shrink:0;margin-top:1px}
 .alarm-text{flex:1}
-.alarm-empty{color:var(--text2);font-size:12px;text-align:center;padding:20px 0}
+.alarm-ack-btn{
+  font-size:14px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;background:rgba(255,255,255,.06);color:var(--text2);
+  flex-shrink:0;transition:all .15s;cursor:pointer;
+}
+.alarm-ack-btn:hover{background:rgba(0,255,136,.2);color:var(--green)}
+.alarm-empty{color:var(--text2);font-size:12px;text-align:center;padding:20px 0;cursor:default!important}
+
+/* ---- 趋势曲线 ---- */
+#panelTrend{flex-shrink:0}
+#trendCanvas{
+  width:100%;height:100px;border-radius:4px;
+  background:rgba(10,14,39,.95);border:1px solid var(--border);
+}
+
+/* ---- 底栏 ---- */
 #footer{
   display:flex;align-items:center;justify-content:space-between;
   padding:4px 20px;background:var(--bg2);border-top:1px solid var(--border);
   font-size:11px;color:var(--text2);flex-shrink:0;height:28px;
 }
+
+/* ---- 滚动条 ---- */
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ---- 响应式 ---- */
 @media(max-width:900px){
   #panel{width:260px}
   .scene-btn{padding:4px 8px;font-size:11px}
+  .mode-btn{padding:3px 8px;font-size:10px}
 }
 @media(max-width:640px){
   #panel{position:absolute;right:0;top:0;bottom:0;z-index:20;transform:translateX(100%);transition:transform .3s}
   #panel.open{transform:translateX(0)}
+  #controlBars{flex-direction:column;gap:4px}
 }

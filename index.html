@@ -16,18 +16,28 @@
       <div class="header-stat"><span class="stat-label">设备总数</span><span class="stat-val" id="statTotal">0</span></div>
       <div class="header-stat"><span class="stat-label">运行中</span><span class="stat-val running" id="statRunning">0</span></div>
       <div class="header-stat"><span class="stat-label">告警</span><span class="stat-val fault" id="statAlarm">0</span></div>
+      <div class="header-stat"><span class="stat-label">帧号</span><span class="stat-val" id="statFrame">--</span></div>
       <div class="header-stat"><span class="stat-label">FPS</span><span class="stat-val" id="statFPS">--</span></div>
     </div>
   </header>
   <div id="main">
     <div id="canvasWrap">
       <canvas id="scene"></canvas>
-      <div id="sceneBar">
-        <button class="scene-btn active" data-scene="normal">正常运行</button>
-        <button class="scene-btn" data-scene="highLevel">液位过高</button>
-        <button class="scene-btn" data-scene="pumpFault">泵组故障</button>
-        <button class="scene-btn" data-scene="sensorOffline">传感器离线</button>
-        <button class="scene-btn" data-scene="nightLowLoad">夜间低负载</button>
+      <div id="controlBars">
+        <div id="modeBar">
+          <button class="mode-btn active" data-mode="auto">自动运行</button>
+          <button class="mode-btn" data-mode="manual">手动控制</button>
+          <button class="mode-btn" data-mode="fault_sim">故障模拟</button>
+          <button class="mode-btn" data-mode="paused">暂停</button>
+          <button class="mode-btn reset-btn" onclick="App.resetAll()">重置</button>
+        </div>
+        <div id="sceneBar">
+          <button class="scene-btn active" data-scene="normal">正常运行</button>
+          <button class="scene-btn" data-scene="highLevel">液位过高</button>
+          <button class="scene-btn" data-scene="pumpFault">泵组故障</button>
+          <button class="scene-btn" data-scene="sensorOffline">传感器离线</button>
+          <button class="scene-btn" data-scene="nightLowLoad">夜间低负载</button>
+        </div>
       </div>
     </div>
     <aside id="panel">
@@ -36,18 +46,23 @@
         <div id="panelContent" class="panel-placeholder">点击画布中的设备查看详情</div>
       </div>
       <div class="panel-section" id="panelAlarm">
-        <h2>告警列表</h2>
+        <h2>告警列表 <span class="alarm-hint">点击确认</span></h2>
         <ul id="alarmList"></ul>
+      </div>
+      <div class="panel-section" id="panelTrend">
+        <h2>趋势曲线</h2>
+        <canvas id="trendCanvas" width="280" height="100"></canvas>
       </div>
     </aside>
   </div>
   <footer id="footer">
-    <span id="sceneLabel">当前场景：正常运行</span>
+    <span id="sceneLabel">场景：正常运行 | 模式：自动运行</span>
     <span id="perfInfo"></span>
-    <span>v1.0.0</span>
+    <span>v2.0.0</span>
   </footer>
   <script src="js/data.js"></script>
   <script src="js/renderer.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/test.js"></script>
 </body>
 </html>
