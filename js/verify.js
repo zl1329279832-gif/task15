@@ -233,6 +233,195 @@ var Verify = (function () {
     await _wait(300);
     _assert(10, '重置后定时器停止', Engine._debugState().timerActive === false);
 
+    // ===== Step 11: 快速策略切换 — 数据版本一致性 =====
+    Engine.setMode('auto');
+    await _wait(500);  // 让 Predictor 积累一些历史数据
+
+    var versionBefore = Strategy.getVersion();
+    _assert(11, '初始策略版本号 >= 0', versionBefore >= 0,
+      'version=' + versionBefore);
+
+    // 快速切换: 节能 → 排涝 → 安全 → 节能 → 排涝
+    var strategies = ['energy', 'drainage', 'safety', 'energy', 'drainage'];
+    for (var si = 0; si < strategies.length; si++) {
+      Strategy.switchStrategy(strategies[si], Engine.getSnapshot());
+      await _wait(30);  // 极短间隔模拟快速点击
+    }
+    await _wait(200);
+
+    var versionAfter = Strategy.getVersion();
+    _assert(11, '快速切换后版本号递增正确',
+      versionAfter === versionBefore + strategies.length,
+      'before=' + versionBefore + ' after=' + versionAfter +
+      ' expected=' + (versionBefore + strategies.length));
+
+    _assert(11, '最终策略为 drainage',
+      Strategy.getCurrentStrategy() === 'drainage',
+      'current=' + Strategy.getCurrentStrategy());
+
+    // Predictor 缓存应该已被失效或正在重算
+    var predVersion = Predictor.getVersion();
+    _assert(11, 'Predictor 版本号已更新到最新策略',
+      predVersion === versionAfter,
+      'predictorVersion=' + predVersion + ' strategyVersion=' + versionAfter);
+
+    // 让仿真继续，使 Predictor 重新分析
+    await _wait(1500);
+
+    // 现在 Predictor 应该已经在新策略版本下完成分析
+    var preds = Predictor.getPredictions();
+    if (preds) {
+      _assert(11, '预测数据标记了正确的策略版本',
+        preds.strategyVersion === versionAfter,
+        'predVersion=' + preds.strategyVersion + ' expected=' + versionAfter);
+    } else {
+      _result(11, '预测数据尚未生成 (历史不足)', true, 'predictions=null — acceptable');
+    }
+    await _wait(300);
+
+    // ===== Step 12: 连续仿真跨策略 — 指标重算验证 =====
+    // 切回安全策略，运行一段时间，收集指标
+    Strategy.switchStrategy('safety', Engine.getSnapshot());
+    var safetyVersion = Strategy.getVersion();
+    await _wait(2000);  // 让引擎在安全策略下运行
+
+    var safetySnap = Engine.getSnapshot();
+    var safetyMetrics = {
+      energy: safetySnap.energyKWh,
+      alarms: safetySnap.alarms.length,
+      level: safetySnap.tankLevel
+    };
+
+    // 切到节能策略
+    Strategy.switchStrategy('energy', Engine.getSnapshot());
+    var energyVersion = Strategy.getVersion();
+    await _wait(2000);
+
+    var energySnap = Engine.getSnapshot();
+    var energyMetrics = {
+      energy: energySnap.energyKWh,
+      alarms: energySnap.alarms.length,
+      level: energySnap.tankLevel
+    };
+
+    _assert(12, '策略切换后版本号递增',
+      energyVersion > safetyVersion,
+      'energy=' + energyVersion + ' safety=' + safetyVersion);
+
+    _assert(12, '能耗持续增长 (跨策略)',
+      energyMetrics.energy >= safetyMetrics.energy,
+      'safety=' + safetyMetrics.energy.toFixed(3) + ' energy=' + energyMetrics.energy.toFixed(3));
+
+    // 策略对比数据应该反映最新的切换
+    var comparison = Strategy.getComparison();
+    if (comparison) {
+      _assert(12, '策略对比: from=安全优先',
+        comparison.fromStrategy === '\u5b89\u5168\u4f18\u5148',
+        'from=' + comparison.fromStrategy);
+      _assert(12, '策略对比: to=节能优先',
+        comparison.toStrategy === '\u8282\u80fd\u4f18\u5148',
+        'to=' + comparison.toStrategy);
+    } else {
+      _result(12, '策略对比数据尚未生成 (需等待5秒后)', true, 'comparison=null — acceptable');
+    }
+
+    // 切到排涝策略，验证 _metricsAfter 被清除
+    Strategy.switchStrategy('drainage', Engine.getSnapshot());
+    var comparisonAfterSwitch = Strategy.getComparison();
+    _assert(12, '新切换后旧的 metricsAfter 被清除',
+      comparisonAfterSwitch === null,
+      'comparison should be null immediately after switch');
+    await _wait(300);
+
+    // ===== Step 13: 风险热区刷新验证 =====
+    // 让仿真运行积累风险数据
+    await _wait(2000);
+    var riskScores = Predictor.getRiskScores();
+    var riskKeys = Object.keys(riskScores);
+    var riskVersion = Predictor.getVersion();
+    var stratVersionNow = Strategy.getVersion();
+
+    _assert(13, 'Predictor 版本与策略版本一致',
+      riskVersion === stratVersionNow,
+      'predictor=' + riskVersion + ' strategy=' + stratVersionNow);
+
+    // Renderer 风险数据版本应该与策略版本一致
+    var rendererRiskVersion = Renderer.getRiskDataVersion();
+    _assert(13, 'Renderer 风险数据版本与策略一致',
+      rendererRiskVersion === stratVersionNow || rendererRiskVersion === -1,
+      'rendererRiskVersion=' + rendererRiskVersion + ' strategy=' + stratVersionNow);
+
+    // 切换策略后，风险热区应该被清除
+    Strategy.switchStrategy('safety', Engine.getSnapshot());
+    // 等待防抖完成
+    await _wait(200);
+
+    // 在 Predictor 重新分析之前，风险数据应为空
+    var riskAfterSwitch = Predictor.getRiskScores();
+    var riskKeysAfter = Object.keys(riskAfterSwitch);
+    // invalidateCache 应该已经清空了 riskScores
+    // 但 _forceRecalculate 可能已经重新填充 — 取决于时序
+    // 关键断言: 如果 Predictor 尚未重新分析，getPredictions 应返回 null
+    var predAfterSwitch = Predictor.getPredictions();
+    var predNullOk = (predAfterSwitch === null) ||
+      (predAfterSwitch && predAfterSwitch.strategyVersion === Strategy.getVersion());
+    _assert(13, '策略切换后预测数据版本正确或为 null',
+      predNullOk,
+      'predictions=' + (predAfterSwitch ? 'v' + predAfterSwitch.strategyVersion : 'null'));
+    await _wait(500);
+
+    // ===== Step 14: 趋势缓冲区重置验证 =====
+    // 运行仿真积累趋势数据
+    await _wait(2000);
+    var trendLenBefore = Trend.getLength();
+    _assert(14, '趋势缓冲区有数据',
+      trendLenBefore > 0,
+      'length=' + trendLenBefore);
+
+    // 切换策略 — 预测曲线应被清除，但历史缓冲区保留
+    Strategy.switchStrategy('energy', Engine.getSnapshot());
+    await _wait(200);
+
+    var trendLenAfter = Trend.getLength();
+    _assert(14, '策略切换后趋势历史缓冲区保留',
+      trendLenAfter > 0,
+      'length=' + trendLenAfter);
+
+    _assert(14, '趋势策略版本已更新',
+      Trend.getStrategyVersion() === Strategy.getVersion(),
+      'trendVersion=' + Trend.getStrategyVersion() +
+      ' strategyVersion=' + Strategy.getVersion());
+
+    // 完全重置缓冲区
+    Trend.resetBuffer(Strategy.getVersion());
+    _assert(14, 'resetBuffer 后缓冲区为空',
+      Trend.getLength() === 0,
+      'length=' + Trend.getLength());
+
+    // 继续运行，验证缓冲区重新积累
+    await _wait(2000);
+    _assert(14, 'resetBuffer 后缓冲区重新积累',
+      Trend.getLength() > 0,
+      'length=' + Trend.getLength());
+
+    // 最终一致性检查: 所有模块版本号应一致
+    var finalStratVersion = Strategy.getVersion();
+    var finalPredVersion = Predictor.getVersion();
+    var finalTrendVersion = Trend.getStrategyVersion();
+    _assert(14, '最终版本一致性: Predictor',
+      finalPredVersion === finalStratVersion,
+      'pred=' + finalPredVersion + ' strat=' + finalStratVersion);
+    _assert(14, '最终版本一致性: Trend',
+      finalTrendVersion === finalStratVersion,
+      'trend=' + finalTrendVersion + ' strat=' + finalStratVersion);
+
+    // 清理
+    Engine.reset();
+    Trend.reset();
+    Predictor.reset();
+    Strategy.reset();
+    await _wait(300);
+
     // ===== Summary =====
     console.log('%c========== 验证完成 ==========', 'color:#00d4ff;font-weight:bold');
     console.log('%c通过: ' + _passCount + '  失败: ' + _failCount,

@@ -16,6 +16,7 @@ var Trend = (function () {
   var _canvas = null;
   var _ctx = null;
   var _W = 0, _H = 0;
+  var _strategyVersion = -1;  // 当前缓冲区对应的策略版本号
 
   // 三条曲线配置
   var SERIES = [
@@ -219,12 +220,47 @@ var Trend = (function () {
   function _clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
   /**
+   * 仅清除预测曲线数据，保留历史缓冲区。
+   * 策略切换时调用 — 旧策略的预测曲线不再有效，但历史数据仍有参考价值。
+   */
+  function clearPredictions() {
+    _predictions = null;
+  }
+
+  /**
+   * 完全重置缓冲区（历史 + 预测）。
+   * 用于数据版本不兼容或需要彻底清理的场景。
+   * @param {number} [newVersion] - 新的策略版本号
+   */
+  function resetBuffer(newVersion) {
+    _buffer = [];
+    _predictions = null;
+    _pushCounter = 0;
+    if (newVersion !== undefined) _strategyVersion = newVersion;
+  }
+
+  /**
+   * 更新策略版本号
+   */
+  function setStrategyVersion(v) {
+    _strategyVersion = v;
+  }
+
+  /**
+   * 获取当前缓冲区对应的策略版本号
+   */
+  function getStrategyVersion() {
+    return _strategyVersion;
+  }
+
+  /**
    * 重置
    */
   function reset() {
     _buffer = [];
     _predictions = null;
     _pushCounter = 0;
+    _strategyVersion = -1;
   }
 
   /**
@@ -238,6 +274,10 @@ var Trend = (function () {
     init: init,
     pushFromSnapshot: pushFromSnapshot,
     setPredictions: setPredictions,
+    clearPredictions: clearPredictions,
+    resetBuffer: resetBuffer,
+    setStrategyVersion: setStrategyVersion,
+    getStrategyVersion: getStrategyVersion,
     draw: draw,
     reset: reset,
     resize: _resize,

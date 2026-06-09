@@ -74,6 +74,7 @@ var Strategy = (function () {
   var _lastSnapEnergy = 0;
   var _lastSnapAlarmCount = 0;
   var _lastSnapTankLevel = 0.6;
+  var _strategyVersion = 0;          // 数据版本号，每次切换递增
 
   /* ========== 指标计算 ========== */
   function _computeMetrics(snap) {
@@ -194,6 +195,8 @@ var Strategy = (function () {
 
   /**
    * 切换策略
+   * 递增数据版本号，清除上一次切换的"切换后"指标，
+   * 确保下游模块可检测到版本变化并重新计算。
    */
   function switchStrategy(newId, snap) {
     if (!STRATEGIES[newId] || newId === _currentStrategy) return false;
@@ -202,16 +205,23 @@ var Strategy = (function () {
     _metricsBefore = _computeMetrics(snap);
     _prevStrategy = _currentStrategy;
 
+    // 清除上一次切换的"切换后"指标 — 避免快速切换时使用旧策略的缓存数据
+    _metricsAfter = null;
+
     // 切换
     _currentStrategy = newId;
     _switchTime = Date.now();
+
+    // 递增数据版本号 — 下游模块 (Predictor/Trend/Renderer) 据此判断缓存是否过期
+    _strategyVersion++;
 
     // 记录切换历史
     _switchHistory.push({
       from: _prevStrategy,
       to: newId,
       time: _switchTime,
-      metricsBefore: _metricsBefore
+      metricsBefore: _metricsBefore,
+      version: _strategyVersion
     });
     if (_switchHistory.length > 20) _switchHistory.shift();
 
@@ -297,6 +307,7 @@ var Strategy = (function () {
     _lastSnapEnergy = 0;
     _lastSnapAlarmCount = 0;
     _lastSnapTankLevel = 0.6;
+    _strategyVersion++;  // 重置也递增版本号，使所有缓存失效
   }
 
   return {
@@ -308,6 +319,7 @@ var Strategy = (function () {
     getComparison: getComparison,
     getDispatchAdvice: getDispatchAdvice,
     getSwitchHistory: getSwitchHistory,
+    getVersion: function () { return _strategyVersion; },
     reset: reset,
     STRATEGIES: STRATEGIES
   };

@@ -31,6 +31,8 @@ var Predictor = (function () {
   var _riskScores = {};         // {eqId: {score:0-100, type:'', label:''}}
   var _suggestions = [];        // 调度建议列表
   var _totalSimTime = 0;
+  var _strategyVersion = -1;    // 当前缓存对应的策略版本号，-1 表示无缓存
+  var _lastAnalyzeVersion = -1; // 上一次 _analyze 对应的策略版本号
 
   /* ========== 工具函数 ========== */
   function _clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -70,7 +72,17 @@ var Predictor = (function () {
   }
 
   /* ========== 采样 ========== */
-  function pushSnapshot(snap) {
+  /**
+   * 推送快照数据。
+   * @param {Object} snap - Engine 快照
+   * @param {number} [stratVersion] - 当前策略版本号，用于检测策略切换
+   */
+  function pushSnapshot(snap, stratVersion) {
+    // 如果策略版本变化，标记需要重新分析
+    if (stratVersion !== undefined && stratVersion !== _strategyVersion) {
+      _strategyVersion = stratVersion;
+    }
+
     _sampleCounter++;
     if (_sampleCounter < SAMPLE_INTERVAL) return;
     _sampleCounter = 0;
@@ -143,6 +155,7 @@ var Predictor = (function () {
   function _analyze() {
     _riskScores = {};
     _suggestions = [];
+    _lastAnalyzeVersion = _strategyVersion;
 
     var pumpIds = ['pump1', 'pump2', 'pump3'];
 
@@ -316,7 +329,13 @@ var Predictor = (function () {
   }
 
   /* ========== 预测曲线 ========== */
+  /**
+   * 获取预测曲线。
+   * 如果策略版本已变化但尚未重新分析，返回 null 以避免输出旧策略的缓存预测。
+   */
   function getPredictions() {
+    // 如果策略版本已变化但分析尚未在新版本下运行，拒绝返回旧缓存
+    if (_lastAnalyzeVersion !== _strategyVersion) return null;
     if (_history.length < 15) return null;
 
     var n = _history.length;
@@ -339,7 +358,8 @@ var Predictor = (function () {
       tankLevel: [],
       totalFlow: [],
       totalPower: [],
-      energyKWh: []
+      energyKWh: [],
+      strategyVersion: _strategyVersion  // 标记数据所属策略版本
     };
 
     var lastT = _history[n - 1].t;
@@ -410,6 +430,29 @@ var Predictor = (function () {
     };
   }
 
+  /**
+   * 策略切换时调用：清除所有派生缓存，保留历史原始数据。
+   * 风险评分、预测曲线、调度建议将在下一次 pushSnapshot 时基于新策略重新计算。
+   * 压力历史也需清除，因为不同策略下泵的运行模式不同，旧压力数据不具参考价值。
+   */
+  function invalidateCache(newStrategyVersion) {
+    _riskScores = {};
+    _suggestions = [];
+    _pressureHistory = {pump1: [], pump2: [], pump3: []};
+    // 重置启停计数 — 不同策略下泵组调度逻辑不同，旧的启停频率不代表新策略风险
+    _pumpStartStopCount = {pump1: 0, pump2: 0, pump3: 0};
+    // 更新策略版本号，使 getPredictions 在重新分析前返回 null
+    _strategyVersion = newStrategyVersion;
+    _lastAnalyzeVersion = -1;  // 强制下一次 pushSnapshot 触发完整重算
+  }
+
+  /**
+   * 获取当前缓存对应的策略版本号
+   */
+  function getVersion() {
+    return _strategyVersion;
+  }
+
   function reset() {
     _sampleCounter = 0;
     _history = [];
@@ -422,6 +465,8 @@ var Predictor = (function () {
     _riskScores = {};
     _suggestions = [];
     _totalSimTime = 0;
+    _strategyVersion = -1;
+    _lastAnalyzeVersion = -1;
   }
 
   return {
@@ -432,6 +477,8 @@ var Predictor = (function () {
     getHistory: getHistory,
     getStats: getStats,
     getEnergyTrend: getEnergyTrend,
+    invalidateCache: invalidateCache,
+    getVersion: getVersion,
     reset: reset
   };
 })();

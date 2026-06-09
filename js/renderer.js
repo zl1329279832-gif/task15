@@ -24,6 +24,7 @@ var Renderer = (function () {
   var hitAreas = [];
   var _riskData = {};          // 风险热区数据 {eqId: {score, type, label}}
   var _showRiskOverlay = true;  // 是否显示风险热区
+  var _riskDataVersion = -1;    // 风险数据对应的策略版本号
 
   var SIZES = {
     pump: {rw: 0.055, rh: 0.08},
@@ -633,9 +634,27 @@ var Renderer = (function () {
   /* ========== Setters ========== */
   function setNight(v) { isNight = !!v; }
   function setSelected(id) { selectedId = id || null; }
-  function setRiskData(data) { _riskData = data || {}; }
+  function setRiskData(data, version) {
+    _riskData = data || {};
+    if (version !== undefined) _riskDataVersion = version;
+  }
   function setShowRiskOverlay(v) { _showRiskOverlay = !!v; }
   function getFPS() { return perf.fps; }
+
+  /**
+   * 清除风险热区数据 — 策略切换时调用，避免显示旧策略的风险热区。
+   */
+  function clearRiskData() {
+    _riskData = {};
+    _riskDataVersion = -1;
+  }
+
+  /**
+   * 获取当前风险数据的策略版本号
+   */
+  function getRiskDataVersion() {
+    return _riskDataVersion;
+  }
 
   function _rr(x, y, w, h, r) {
     ctx.beginPath();
@@ -654,6 +673,7 @@ var Renderer = (function () {
     setPaused: setPaused,
     setNight: setNight, setSelected: setSelected,
     setRiskData: setRiskData, setShowRiskOverlay: setShowRiskOverlay,
+    clearRiskData: clearRiskData, getRiskDataVersion: getRiskDataVersion,
     getFPS: getFPS
   };
 })();

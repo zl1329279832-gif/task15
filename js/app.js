@@ -16,10 +16,12 @@ var App = (function () {
   var _resizeTimer = null;
   var _trendDrawTimer = null;
   var _predictUpdateTimer = null;
+  var _strategySwitchTimer = null;  // 策略切换防抖定时器
 
   /* ========== 状态 ========== */
   var _latestSnap = null;
   var _selectedEqId = null;
+  var _lastStrategyVersion = -1;    // 上一次已知的策略版本号
 
   var STATE_BG = {
     running: 'rgba(0,255,136,0.12)', stopped: 'rgba(102,119,136,0.10)',
@@ -200,13 +202,20 @@ var App = (function () {
   }
 
   function _doReset() {
+    // 清除策略切换防抖定时器 — 避免重置后仍然执行延迟的失效操作
+    if (_strategySwitchTimer) {
+      clearTimeout(_strategySwitchTimer);
+      _strategySwitchTimer = null;
+    }
+    _lastStrategyVersion = -1;
+
     Engine.reset();
     Trend.reset();
     Predictor.reset();
     Strategy.reset();
     _selectedEqId = null;
     Renderer.setSelected(null);
-    Renderer.setRiskData({});
+    Renderer.clearRiskData();
     dom.panelContent.innerHTML = '<div class="panel-placeholder">\u70b9\u51fb\u753b\u5e03\u4e2d\u7684\u8bbe\u5907\u67e5\u770b\u8be6\u60c5</div>';
     dom.predictContent.innerHTML = '<div class="panel-placeholder">\u542f\u52a8\u4eff\u771f\u540e\u663e\u793a\u5206\u6790\u6570\u636e</div>';
     dom.dispatchContent.innerHTML = '<div class="panel-placeholder">\u9009\u62e9\u7b56\u7565\u540e\u663e\u793a\u5efa\u8bae</div>';
@@ -428,7 +437,78 @@ var App = (function () {
           btns[i].classList.add('active');
         }
       }
+
+      // ===== 数据版本与缓存失效管线 =====
+      // 策略切换必须使下游模块的缓存全部失效，防止热区、趋势、建议互相矛盾
+      _invalidateOnStrategySwitch();
     }
+  }
+
+  /**
+   * 策略切换后的缓存失效管线。
+   * 清除 Predictor 的旧风险评分/预测/建议，
+   * 清除 Trend 的旧预测曲线，
+   * 清除 Renderer 的旧风险热区，
+   * 然后立即触发一轮重算（不等待下一个 tick）。
+   *
+   * 快速切换时使用防抖：如果在上一次切换的失效操作尚未完成时又发生切换，
+   * 只保留最新一次切换的失效操作，避免重复计算。
+   */
+  function _invalidateOnStrategySwitch() {
+    // 防抖：清除上一次尚未执行的失效操作
+    if (_strategySwitchTimer) {
+      clearTimeout(_strategySwitchTimer);
+      _strategySwitchTimer = null;
+    }
+
+    var newVersion = Strategy.getVersion();
+    _lastStrategyVersion = newVersion;
+
+    // 1. Predictor: 清除旧策略下的风险评分、预测曲线、调度建议、压力历史
+    Predictor.invalidateCache(newVersion);
+
+    // 2. Trend: 清除旧策略下的预测曲线 (保留历史缓冲区)
+    Trend.clearPredictions();
+    Trend.setStrategyVersion(newVersion);
+
+    // 3. Renderer: 清除旧策略下的风险热区覆盖
+    Renderer.clearRiskData();
+
+    // 4. 防抖后强制立即重算 — 等 50ms 让 Engine 至少产生一个新快照
+    _strategySwitchTimer = setTimeout(function () {
+      _strategySwitchTimer = null;
+      _forceRecalculate();
+    }, 50);
+  }
+
+  /**
+   * 强制立即执行一轮完整的重算和 UI 更新。
+   * 不依赖 Engine tick 定时器，直接从最新快照驱动所有下游模块。
+   */
+  function _forceRecalculate() {
+    var snap = Engine.getSnapshot();
+    if (!snap) return;
+    _latestSnap = snap;
+
+    var version = Strategy.getVersion();
+
+    // Predictor 重算 — 传入策略版本号
+    Predictor.pushSnapshot(snap, version);
+
+    // Strategy 指标更新
+    Strategy.updateMetrics(snap);
+
+    // Renderer 风险热区更新 — 传入版本号
+    Renderer.setRiskData(Predictor.getRiskScores(), version);
+
+    // Trend 预测曲线更新
+    var preds = Predictor.getPredictions();
+    Trend.setPredictions(preds);
+
+    // 立即刷新预测/调度/对比面板
+    _updatePredictPanel();
+    _updateDispatchPanel();
+    _updateComparePanel();
   }
 
   /* ========== 预测面板更新 ========== */
@@ -569,24 +649,28 @@ var App = (function () {
   }
 
   function _updateAll(snap) {
+    var stratVersion = Strategy.getVersion();
+
     // 1. Canvas 渲染器 — 从快照
     Renderer.updateFromSnapshot(snap);
 
     // 2. 趋势图 — 从快照
     Trend.pushFromSnapshot(snap);
 
-    // 3. 预测分析 — 从快照
-    Predictor.pushSnapshot(snap);
+    // 3. 预测分析 — 从快照 (传入策略版本号)
+    Predictor.pushSnapshot(snap, stratVersion);
 
     // 4. 策略指标更新 — 从快照
     Strategy.updateMetrics(snap);
 
     // 5. 更新 Canvas 风险热区
-    Renderer.setRiskData(Predictor.getRiskScores());
+    // invalidateCache 已在策略切换时清空旧数据；_analyze 重算后此处自动更新
+    Renderer.setRiskData(Predictor.getRiskScores(), stratVersion);
 
     // 6. 更新趋势预测曲线
+    // getPredictions 在策略版本变化且未重新分析前返回 null，安全地跳过
     var preds = Predictor.getPredictions();
-    Trend.setPredictions(preds);
+    if (preds) Trend.setPredictions(preds);
 
     // 7. DOM 统计 — 从快照
     dom.statTotal.textContent = snap.totalEqCount;
@@ -634,6 +718,7 @@ var App = (function () {
   return {
     // 供 Verify 使用
     getLatestSnapshot: function () { return _latestSnap; },
+    getLastStrategyVersion: function () { return _lastStrategyVersion; },
     doReset: _doReset
   };
 })();
