@@ -13,41 +13,83 @@
       <span class="header-sub" id="headerTime"></span>
     </div>
     <div class="header-right">
-      <div class="header-stat"><span class="stat-label">设备总数</span><span class="stat-val" id="statTotal">0</span></div>
-      <div class="header-stat"><span class="stat-label">运行中</span><span class="stat-val running" id="statRunning">0</span></div>
-      <div class="header-stat"><span class="stat-label">告警</span><span class="stat-val fault" id="statAlarm">0</span></div>
-      <div class="header-stat"><span class="stat-label">FPS</span><span class="stat-val" id="statFPS">--</span></div>
+      <div class="header-stat">
+        <span class="stat-label">设备总数</span>
+        <span class="stat-val" id="statTotal">0</span>
+      </div>
+      <div class="header-stat">
+        <span class="stat-label">运行中</span>
+        <span class="stat-val running" id="statRunning">0</span>
+      </div>
+      <div class="header-stat">
+        <span class="stat-label">告警</span>
+        <span class="stat-val fault" id="statAlarm">0</span>
+      </div>
+      <div class="header-stat">
+        <span class="stat-label">FPS</span>
+        <span class="stat-val" id="statFPS">--</span>
+      </div>
     </div>
   </header>
+
   <div id="main">
     <div id="canvasWrap">
       <canvas id="scene"></canvas>
-      <div id="sceneBar">
-        <button class="scene-btn active" data-scene="normal">正常运行</button>
-        <button class="scene-btn" data-scene="highLevel">液位过高</button>
-        <button class="scene-btn" data-scene="pumpFault">泵组故障</button>
-        <button class="scene-btn" data-scene="sensorOffline">传感器离线</button>
-        <button class="scene-btn" data-scene="nightLowLoad">夜间低负载</button>
+
+      <!-- 模式控制栏 -->
+      <div id="modeBar">
+        <button class="mode-btn" data-action="auto">▶ 自动运行</button>
+        <button class="mode-btn" data-action="manual">✋ 手动控制</button>
+        <button class="mode-btn" data-action="pause">⏸ 暂停</button>
+        <button class="mode-btn" data-action="resume">▶ 恢复</button>
+        <button class="mode-btn btn-reset" data-action="reset">↺ 重置</button>
+      </div>
+
+      <!-- 故障注入栏 -->
+      <div id="faultBar">
+        <button class="fault-btn" data-fault="pump1_fault">⚠ 注入1#泵故障</button>
+        <button class="fault-btn" data-fault="pump2_fault">⚠ 注入2#泵故障</button>
+        <button class="fault-btn" data-fault="sensor_offline">⚠ 传感器离线</button>
+        <button class="fault-btn" data-fault="pipe_leak">⚠ 管道泄漏</button>
       </div>
     </div>
+
     <aside id="panel">
+      <!-- 设备信息 -->
       <div class="panel-section" id="panelInfo">
         <h2>设备信息</h2>
         <div id="panelContent" class="panel-placeholder">点击画布中的设备查看详情</div>
       </div>
+
+      <!-- 告警列表 -->
       <div class="panel-section" id="panelAlarm">
         <h2>告警列表</h2>
         <ul id="alarmList"></ul>
       </div>
+
+      <!-- 手动控制面板 (仅手动模式可见) -->
+      <div class="panel-section" id="manualPanel" style="display:none"></div>
+
+      <!-- 趋势曲线 -->
+      <div class="panel-section" id="panelTrend">
+        <h2>趋势曲线</h2>
+        <canvas id="trendCanvas" width="280" height="120"></canvas>
+      </div>
     </aside>
   </div>
+
   <footer id="footer">
-    <span id="sceneLabel">当前场景：正常运行</span>
+    <span id="sceneLabel">当前模式：待机</span>
+    <span id="modeLabel"></span>
     <span id="perfInfo"></span>
-    <span>v1.0.0</span>
+    <span>v2.0.0</span>
   </footer>
+
   <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
   <script src="js/renderer.js"></script>
+  <script src="js/trend.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/verify.js"></script>
 </body>
 </html>
