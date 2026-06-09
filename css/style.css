@@ -147,10 +147,96 @@ body{display:flex;flex-direction:column}
 
 /* ===== Trend chart ===== */
 #trendCanvas{
-  width:100%;height:120px;display:block;
+  width:100%;height:160px;display:block;
   border:1px solid var(--border);border-radius:4px;
   margin-top:8px;
 }
+
+/* ===== Strategy bar ===== */
+#strategyBar{
+  position:absolute;bottom:88px;left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;align-items:center;z-index:5;
+  padding:4px 10px;border-radius:6px;
+  background:rgba(13,18,48,.9);border:1px solid var(--border);
+  backdrop-filter:blur(6px);
+}
+.strategy-label{font-size:11px;color:var(--text2);white-space:nowrap;margin-right:4px}
+.strategy-btn{
+  padding:4px 10px;border:1px solid var(--border);border-radius:4px;
+  background:rgba(255,255,255,.03);color:var(--text2);font-size:11px;
+  cursor:pointer;transition:all .2s;white-space:nowrap;
+}
+.strategy-btn:hover{border-color:var(--accent);color:var(--text)}
+.strategy-btn.active{background:rgba(0,212,255,.12);border-color:var(--accent);color:var(--accent);font-weight:600}
+.strategy-btn[data-strategy="energy"].active{background:rgba(0,255,136,.1);border-color:var(--green);color:var(--green)}
+.strategy-btn[data-strategy="safety"].active{background:rgba(68,136,255,.1);border-color:var(--blue);color:var(--blue)}
+.strategy-btn[data-strategy="drainage"].active{background:rgba(255,100,68,.1);border-color:#ff6644;color:#ff6644}
+.risk-toggle{font-size:10px;color:var(--text2);display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;margin-left:6px}
+.risk-toggle input{width:12px;height:12px;cursor:pointer;accent-color:var(--accent)}
+
+/* ===== Predict panel ===== */
+#panelPredict .risk-item{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border-radius:4px;margin-bottom:4px;font-size:11px;
+  border-left:3px solid transparent;
+}
+.risk-item.high{background:rgba(255,68,85,.08);border-left-color:var(--red);color:var(--red)}
+.risk-item.medium{background:rgba(255,170,0,.08);border-left-color:var(--yellow);color:var(--yellow)}
+.risk-item.low{background:rgba(0,212,255,.06);border-left-color:var(--accent);color:var(--accent)}
+.risk-score{
+  font-family:var(--mono);font-weight:700;font-size:13px;min-width:36px;text-align:right;
+}
+.risk-label{flex:1}
+.risk-type-badge{
+  font-size:9px;padding:1px 5px;border-radius:2px;
+  background:rgba(255,255,255,.06);color:var(--text2);
+}
+
+/* ===== Dispatch advice ===== */
+.dispatch-item{
+  display:flex;align-items:flex-start;gap:6px;padding:5px 8px;
+  border-radius:4px;margin-bottom:3px;font-size:11px;
+}
+.dispatch-item.type-start{color:var(--green);background:rgba(0,255,136,.05)}
+.dispatch-item.type-stop{color:var(--red);background:rgba(255,68,85,.05)}
+.dispatch-item.type-info{color:var(--accent);background:rgba(0,212,255,.05)}
+.dispatch-item.type-warning{color:var(--yellow);background:rgba(255,170,0,.05)}
+.dispatch-icon{font-size:13px;flex-shrink:0;margin-top:1px}
+.dispatch-text{flex:1;line-height:1.4}
+
+/* ===== Compare panel ===== */
+.compare-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:6px 0;margin-bottom:8px;font-size:12px;
+}
+.compare-from,.compare-to{
+  padding:2px 8px;border-radius:3px;font-weight:600;font-size:11px;
+}
+.compare-arrow{color:var(--text2);font-size:14px}
+.compare-table{width:100%;border-collapse:collapse;font-size:11px}
+.compare-table td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.04)}
+.compare-table td:first-child{color:var(--text2);width:35%}
+.compare-table td:nth-child(2){text-align:right;font-family:var(--mono);color:var(--text)}
+.compare-table td:nth-child(3){text-align:center;color:var(--text2);width:20px}
+.compare-table td:nth-child(4){text-align:right;font-family:var(--mono);color:var(--text)}
+.compare-delta{font-size:10px;font-weight:600}
+.compare-delta.positive{color:var(--green)}
+.compare-delta.negative{color:var(--red)}
+.compare-delta.neutral{color:var(--text2)}
+
+/* ===== Energy trend mini ===== */
+.energy-trend-bar{
+  display:flex;align-items:center;gap:8px;padding:8px;
+  background:rgba(255,255,255,.03);border:1px solid var(--border);
+  border-radius:6px;margin-bottom:8px;
+}
+.energy-trend-icon{font-size:16px}
+.energy-trend-info{flex:1}
+.energy-trend-label{font-size:10px;color:var(--text2)}
+.energy-trend-value{font-size:14px;font-weight:700;font-family:var(--mono);color:var(--purple)}
+.energy-trend-trend{font-size:10px;margin-left:4px}
+.energy-trend-trend.up{color:var(--red)}
+.energy-trend-trend.down{color:var(--green)}
 
 /* ===== Footer ===== */
 #footer{
@@ -167,7 +253,8 @@ body{display:flex;flex-direction:column}
 /* ===== Responsive ===== */
 @media(max-width:900px){
   #panel{width:260px}
-  .mode-btn,.fault-btn{padding:4px 8px;font-size:11px}
+  .mode-btn,.fault-btn,.strategy-btn{padding:4px 8px;font-size:11px}
+  #strategyBar{bottom:84px}
 }
 @media(max-width:640px){
   #panel{
@@ -175,6 +262,7 @@ body{display:flex;flex-direction:column}
     transform:translateX(100%);transition:transform .3s;
   }
   #panel.open{transform:translateX(0)}
-  #modeBar{flex-wrap:wrap;justify-content:center;bottom:80px}
+  #modeBar{flex-wrap:wrap;justify-content:center;bottom:120px}
   #faultBar{flex-wrap:wrap;justify-content:center}
+  #strategyBar{flex-wrap:wrap;justify-content:center;bottom:80px}
 }

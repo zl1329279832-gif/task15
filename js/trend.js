@@ -9,7 +9,9 @@ var Trend = (function () {
 
   var MAX_SAMPLES = 300;     // 5 分钟 @ 1 Hz
   var PUSH_INTERVAL = 10;    // 每 10 个 tick 推送一次 (1 Hz)
+  var PREDICT_SAMPLES = 60;  // 预测 60 个采样点
   var _buffer = [];
+  var _predictions = null;    // 预测数据
   var _pushCounter = 0;
   var _canvas = null;
   var _ctx = null;
@@ -60,14 +62,23 @@ var Trend = (function () {
   }
 
   /**
-   * 绘制趋势图
+   * 设置预测数据
+   */
+  function setPredictions(pred) {
+    _predictions = pred;
+  }
+
+  /**
+   * 绘制趋势图 (含预测曲线)
    */
   function draw() {
     if (!_ctx || !_canvas) return;
 
     var W = _W, H = _H;
     var padL = 36, padR = 6, padT = 14, padB = 18;
-    var plotW = W - padL - padR;
+    var hasPrediction = _predictions && _predictions.tankLevel && _predictions.tankLevel.length > 0;
+    var predZoneW = hasPrediction ? Math.round(W * 0.22) : 0;
+    var plotW = W - padL - padR - predZoneW;
     var plotH = H - padT - padB;
 
     // 背景
@@ -79,6 +90,14 @@ var Trend = (function () {
     _ctx.lineWidth = 1;
     _ctx.strokeRect(padL, padT, plotW, plotH);
 
+    // 预测区域背景
+    if (hasPrediction) {
+      _ctx.fillStyle = 'rgba(20,30,60,0.5)';
+      _ctx.fillRect(padL + plotW, padT, predZoneW, plotH);
+      _ctx.strokeStyle = 'rgba(100,150,200,0.2)';
+      _ctx.strokeRect(padL + plotW, padT, predZoneW, plotH);
+    }
+
     // 网格线
     _ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     _ctx.lineWidth = 0.5;
@@ -86,7 +105,7 @@ var Trend = (function () {
       var gy = padT + plotH * g / 4;
       _ctx.beginPath();
       _ctx.moveTo(padL, gy);
-      _ctx.lineTo(padL + plotW, gy);
+      _ctx.lineTo(padL + plotW + predZoneW, gy);
       _ctx.stroke();
     }
 
@@ -94,7 +113,7 @@ var Trend = (function () {
     _ctx.fillStyle = '#5a7a8a';
     _ctx.font = '10px sans-serif';
     _ctx.textAlign = 'left';
-    _ctx.fillText('\u8d8b\u52bf\u66f2\u7ebf', padL, 10);
+    _ctx.fillText('\u8d8b\u52bf\u66f2\u7ebf' + (hasPrediction ? ' + \u9884\u6d4b' : ''), padL, 10);
 
     if (_buffer.length < 2) {
       _ctx.fillStyle = '#3a4a5a';
@@ -106,13 +125,15 @@ var Trend = (function () {
 
     var n = _buffer.length;
 
-    // 绘制每条曲线
+    // 绘制历史曲线
     for (var s = 0; s < SERIES.length; s++) {
       var sr = SERIES[s];
       _ctx.strokeStyle = sr.color;
       _ctx.lineWidth = 1.5;
+      _ctx.setLineDash([]);
       _ctx.beginPath();
 
+      var lastX = 0, lastY = 0;
       for (var i = 0; i < n; i++) {
         var val = _buffer[i][sr.key];
         var scaled = val * sr.scale;
@@ -121,8 +142,48 @@ var Trend = (function () {
         var y = padT + plotH * (1 - ratio);
         if (i === 0) _ctx.moveTo(x, y);
         else _ctx.lineTo(x, y);
+        lastX = x; lastY = y;
       }
       _ctx.stroke();
+
+      // 绘制预测曲线 (虚线)
+      if (hasPrediction && _predictions[sr.key]) {
+        var predArr = _predictions[sr.key];
+        _ctx.strokeStyle = sr.color;
+        _ctx.lineWidth = 1.2;
+        _ctx.setLineDash([4, 3]);
+        _ctx.globalAlpha = 0.7;
+        _ctx.beginPath();
+        _ctx.moveTo(lastX, lastY);
+
+        for (var pi = 0; pi < predArr.length; pi++) {
+          var pVal = predArr[pi].value;
+          var pRatio = _clamp((pVal - sr.min) / (sr.max - sr.min), 0, 1);
+          var px = padL + plotW + (pi / (PREDICT_SAMPLES - 1)) * predZoneW;
+          var py = padT + plotH * (1 - pRatio);
+          _ctx.lineTo(px, py);
+        }
+        _ctx.stroke();
+        _ctx.globalAlpha = 1;
+        _ctx.setLineDash([]);
+      }
+    }
+
+    // "现在"分割线
+    if (hasPrediction) {
+      _ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      _ctx.lineWidth = 1;
+      _ctx.setLineDash([3, 2]);
+      _ctx.beginPath();
+      _ctx.moveTo(padL + plotW, padT);
+      _ctx.lineTo(padL + plotW, padT + plotH);
+      _ctx.stroke();
+      _ctx.setLineDash([]);
+      // "now" 标签
+      _ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      _ctx.font = '8px sans-serif';
+      _ctx.textAlign = 'center';
+      _ctx.fillText('now', padL + plotW, padT - 2);
     }
 
     // 图例
@@ -148,7 +209,11 @@ var Trend = (function () {
     _ctx.textAlign = 'left';
     _ctx.fillText('-5min', padL, H - 3);
     _ctx.textAlign = 'right';
-    _ctx.fillText('now', padL + plotW, H - 3);
+    _ctx.fillText(hasPrediction ? '+1min' : 'now', padL + plotW + predZoneW, H - 3);
+    if (hasPrediction) {
+      _ctx.textAlign = 'center';
+      _ctx.fillText('now', padL + plotW, H - 3);
+    }
   }
 
   function _clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -158,6 +223,7 @@ var Trend = (function () {
    */
   function reset() {
     _buffer = [];
+    _predictions = null;
     _pushCounter = 0;
   }
 
@@ -171,6 +237,7 @@ var Trend = (function () {
   return {
     init: init,
     pushFromSnapshot: pushFromSnapshot,
+    setPredictions: setPredictions,
     draw: draw,
     reset: reset,
     resize: _resize,

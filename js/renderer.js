@@ -22,6 +22,8 @@ var Renderer = (function () {
   var _paused = false;
   var perf = {frameCount: 0, fps: 0, lastFpsTime: 0};
   var hitAreas = [];
+  var _riskData = {};          // 风险热区数据 {eqId: {score, type, label}}
+  var _showRiskOverlay = true;  // 是否显示风险热区
 
   var SIZES = {
     pump: {rw: 0.055, rh: 0.08},
@@ -125,6 +127,7 @@ var Renderer = (function () {
       drawLabels(_snap.equipment);
     }
     drawSelectionRing();
+    if (_showRiskOverlay) drawRiskHotzones();
 
     ctx.restore();
   }
@@ -517,6 +520,84 @@ var Renderer = (function () {
   }
 
   /* ========== Hit test ========== */
+  function drawRiskHotzones() {
+    if (!_riskData || !_snap) return;
+    var eqTpl = DataModule.equipment;
+    var keys = Object.keys(_riskData);
+    for (var k = 0; k < keys.length; k++) {
+      var eqId = keys[k];
+      var risk = _riskData[eqId];
+      if (!risk || risk.score < 20) continue;
+
+      // 查找设备位置
+      var eq = null;
+      for (var e = 0; e < eqTpl.length; e++) {
+        if (eqTpl[e].id === eqId) { eq = eqTpl[e]; break; }
+      }
+      if (!eq) continue;
+
+      var cx = eq.rx * W, cy = eq.ry * H;
+      var sz = SIZES[eq.type];
+      if (!sz && eq.type !== 'tank') continue;
+
+      var radius;
+      if (eq.type === 'tank') {
+        var tg = DataModule.tankGeom;
+        radius = Math.max(tg.rw * W, tg.rh * H) / 2 + 12;
+        cx = tg.rx * W + tg.rw * W / 2;
+        cy = tg.ry * H + tg.rh * H / 2;
+      } else {
+        radius = Math.max(sz.rw * W, sz.rh * H) / 2 + 10;
+      }
+
+      // 风险颜色映射
+      var riskColor;
+      if (risk.score >= 70) riskColor = 'rgba(255,50,30,';
+      else if (risk.score >= 45) riskColor = 'rgba(255,170,0,';
+      else riskColor = 'rgba(255,220,50,';
+
+      // 脉动效果
+      var pulse = 0.5 + 0.3 * Math.sin(animTime * 3 + k * 1.5);
+      var alpha = (risk.score / 100) * 0.35 * pulse;
+
+      // 绘制热区光晕
+      var gd = ctx.createRadialGradient(cx, cy, radius * 0.2, cx, cy, radius * 1.5);
+      gd.addColorStop(0, riskColor + (alpha * 1.5).toFixed(3) + ')');
+      gd.addColorStop(0.5, riskColor + alpha.toFixed(3) + ')');
+      gd.addColorStop(1, riskColor + '0)');
+      ctx.fillStyle = gd;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 1.5, 0, 6.283);
+      ctx.fill();
+
+      // 风险标签
+      if (risk.score >= 40) {
+        var labelY = cy - radius - 8;
+        var labelText = risk.score.toFixed(0) + '%';
+        ctx.font = 'bold ' + Math.max(10, W * 0.011) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+
+        // 背景
+        var tw = ctx.measureText(labelText).width + 8;
+        ctx.fillStyle = risk.score >= 70 ? 'rgba(180,30,20,0.85)' : 'rgba(160,120,0,0.85)';
+        _rr(cx - tw / 2, labelY - 14, tw, 16, 3);
+        ctx.fill();
+
+        // 文字
+        ctx.fillStyle = '#fff';
+        ctx.fillText(labelText, cx, labelY);
+
+        // 风险类型小标签
+        if (risk.label) {
+          ctx.font = Math.max(8, W * 0.008) + 'px sans-serif';
+          ctx.fillStyle = riskColor + '0.9)';
+          ctx.fillText(risk.label, cx, labelY - 16);
+        }
+      }
+    }
+  }
+
   function rebuildHitAreas() {
     hitAreas = [];
     var eqTpl = DataModule.equipment;
@@ -552,6 +633,8 @@ var Renderer = (function () {
   /* ========== Setters ========== */
   function setNight(v) { isNight = !!v; }
   function setSelected(id) { selectedId = id || null; }
+  function setRiskData(data) { _riskData = data || {}; }
+  function setShowRiskOverlay(v) { _showRiskOverlay = !!v; }
   function getFPS() { return perf.fps; }
 
   function _rr(x, y, w, h, r) {
@@ -570,6 +653,7 @@ var Renderer = (function () {
     updateFromSnapshot: updateFromSnapshot,
     setPaused: setPaused,
     setNight: setNight, setSelected: setSelected,
+    setRiskData: setRiskData, setShowRiskOverlay: setShowRiskOverlay,
     getFPS: getFPS
   };
 })();

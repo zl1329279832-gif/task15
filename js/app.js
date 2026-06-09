@@ -15,6 +15,7 @@ var App = (function () {
   var _fpsTimer = null;
   var _resizeTimer = null;
   var _trendDrawTimer = null;
+  var _predictUpdateTimer = null;
 
   /* ========== 状态 ========== */
   var _latestSnap = null;
@@ -44,6 +45,11 @@ var App = (function () {
     dom.manualPanel = document.getElementById('manualPanel');
     dom.trendCanvas = document.getElementById('trendCanvas');
     dom.sceneLabel = document.getElementById('sceneLabel');
+    dom.strategyBar = document.getElementById('strategyBar');
+    dom.predictContent = document.getElementById('predictContent');
+    dom.dispatchContent = document.getElementById('dispatchContent');
+    dom.compareContent = document.getElementById('compareContent');
+    dom.riskOverlayToggle = document.getElementById('riskOverlayToggle');
   }
 
   /* ========== 初始化 ========== */
@@ -71,6 +77,9 @@ var App = (function () {
 
     // 启动趋势绘制
     _startTrendDraw();
+
+    // 启动预测面板定期更新
+    _startPredictUpdate();
 
     // 产生初始快照
     _latestSnap = Engine.getSnapshot();
@@ -110,6 +119,18 @@ var App = (function () {
     if (_trendDrawTimer) { clearInterval(_trendDrawTimer); _trendDrawTimer = null; }
   }
 
+  function _startPredictUpdate() {
+    if (_predictUpdateTimer) clearInterval(_predictUpdateTimer);
+    _predictUpdateTimer = setInterval(function () {
+      _updatePredictPanel();
+      _updateDispatchPanel();
+      _updateComparePanel();
+    }, 500); // 2 FPS for prediction panels
+  }
+  function _stopPredictUpdate() {
+    if (_predictUpdateTimer) { clearInterval(_predictUpdateTimer); _predictUpdateTimer = null; }
+  }
+
   function _updateClock() {
     var n = new Date(), p = function (v) { return v < 10 ? '0' + v : '' + v; };
     dom.headerTime.textContent = n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate())
@@ -139,6 +160,14 @@ var App = (function () {
 
     // 手动控制 (事件委托)
     dom.manualPanel.addEventListener('click', _onManualClick, false);
+
+    // 策略选择 (事件委托)
+    dom.strategyBar.addEventListener('click', _onStrategyClick, false);
+
+    // 风险热区开关
+    dom.riskOverlayToggle.addEventListener('change', function () {
+      Renderer.setShowRiskOverlay(dom.riskOverlayToggle.checked);
+    }, false);
 
     // 窗口 resize
     window.addEventListener('resize', function () {
@@ -173,9 +202,23 @@ var App = (function () {
   function _doReset() {
     Engine.reset();
     Trend.reset();
+    Predictor.reset();
+    Strategy.reset();
     _selectedEqId = null;
     Renderer.setSelected(null);
+    Renderer.setRiskData({});
     dom.panelContent.innerHTML = '<div class="panel-placeholder">\u70b9\u51fb\u753b\u5e03\u4e2d\u7684\u8bbe\u5907\u67e5\u770b\u8be6\u60c5</div>';
+    dom.predictContent.innerHTML = '<div class="panel-placeholder">\u542f\u52a8\u4eff\u771f\u540e\u663e\u793a\u5206\u6790\u6570\u636e</div>';
+    dom.dispatchContent.innerHTML = '<div class="panel-placeholder">\u9009\u62e9\u7b56\u7565\u540e\u663e\u793a\u5efa\u8bae</div>';
+    dom.compareContent.innerHTML = '<div class="panel-placeholder">\u5207\u6362\u7b56\u7565\u540e\u663e\u793a\u5bf9\u6bd4\u6570\u636e</div>';
+    // 重置策略按钮
+    var stratBtns = dom.strategyBar.querySelectorAll('.strategy-btn');
+    for (var i = 0; i < stratBtns.length; i++) {
+      stratBtns[i].classList.remove('active');
+      if (stratBtns[i].getAttribute('data-strategy') === 'safety') {
+        stratBtns[i].classList.add('active');
+      }
+    }
     _updateModeUI();
     _updateManualPanel();
     return true;
@@ -368,6 +411,157 @@ var App = (function () {
     dom.panelContent.innerHTML = html;
   }
 
+  /* ========== 策略切换 ========== */
+  function _onStrategyClick(e) {
+    var btn = e.target;
+    if (!btn.classList.contains('strategy-btn')) return;
+    var stratId = btn.getAttribute('data-strategy');
+    if (!stratId) return;
+
+    var result = Strategy.switchStrategy(stratId, _latestSnap);
+    if (result) {
+      // 更新按钮高亮
+      var btns = dom.strategyBar.querySelectorAll('.strategy-btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.remove('active');
+        if (btns[i].getAttribute('data-strategy') === stratId) {
+          btns[i].classList.add('active');
+        }
+      }
+    }
+  }
+
+  /* ========== 预测面板更新 ========== */
+  function _updatePredictPanel() {
+    var risks = Predictor.getRiskScores();
+    var keys = Object.keys(risks);
+    var stats = Predictor.getStats();
+    var energyTrend = Predictor.getEnergyTrend();
+
+    if (keys.length === 0 && stats.historyLength < 10) {
+      dom.predictContent.innerHTML = '<div class="panel-placeholder">\u7b49\u5f85\u5206\u6790\u6570\u636e\u79ef\u7d2f...</div>';
+      return;
+    }
+
+    var html = '';
+
+    // 能耗趋势条
+    html += '<div class="energy-trend-bar">';
+    html += '<div class="energy-trend-icon">\u26a1</div>';
+    html += '<div class="energy-trend-info">';
+    html += '<div class="energy-trend-label">\u5b9e\u65f6\u529f\u7387 / \u80fd\u8017\u8d8b\u52bf</div>';
+    html += '<div class="energy-trend-value">' + energyTrend.last.toFixed(1) + '<span class="data-unit">kW</span>';
+    if (Math.abs(energyTrend.trend) > 0.1) {
+      var trendClass = energyTrend.trend > 0 ? 'up' : 'down';
+      var trendIcon = energyTrend.trend > 0 ? '\u2191' : '\u2193';
+      html += '<span class="energy-trend-trend ' + trendClass + '">' + trendIcon + Math.abs(energyTrend.trend).toFixed(2) + '</span>';
+    }
+    html += '</div></div></div>';
+
+    // 启停统计
+    var sc = stats.startStopCount;
+    html += '<div class="energy-trend-bar" style="margin-bottom:4px">';
+    html += '<div class="energy-trend-icon">\u21bb</div>';
+    html += '<div class="energy-trend-info">';
+    html += '<div class="energy-trend-label">\u542f\u505c\u6b21\u6570 (2min)</div>';
+    html += '<div style="font-size:12px;font-family:var(--mono);color:var(--text)">';
+    html += '1#: ' + sc.pump1 + '  2#: ' + sc.pump2 + '  3#: ' + sc.pump3;
+    html += '</div></div></div>';
+
+    // 风险列表
+    if (keys.length > 0) {
+      // 按风险分排序
+      var sorted = [];
+      for (var i = 0; i < keys.length; i++) {
+        sorted.push({id: keys[i], data: risks[keys[i]]});
+      }
+      sorted.sort(function (a, b) { return b.data.score - a.data.score; });
+
+      for (var s = 0; s < sorted.length; s++) {
+        var item = sorted[s];
+        var score = item.data.score;
+        var level = score >= 70 ? 'high' : (score >= 45 ? 'medium' : 'low');
+        var typeName = {
+          freq: '\u542f\u505c', blockage: '\u5835\u585e', idle: '\u7a7a\u8f6c',
+          efficiency: '\u6548\u7387', valve: '\u9600\u95e8', overflow: '\u6ee1\u6ea2',
+          dry: '\u5e72\u6d9d', overheat: '\u8fc7\u70ed', energy: '\u80fd\u8017'
+        }[item.data.type] || item.data.type;
+
+        html += '<div class="risk-item ' + level + '">';
+        html += '<span class="risk-score">' + score.toFixed(0) + '%</span>';
+        html += '<span class="risk-label">' + item.data.label + '</span>';
+        html += '<span class="risk-type-badge">' + typeName + '</span>';
+        html += '</div>';
+      }
+    } else {
+      html += '<div style="text-align:center;color:var(--green);font-size:12px;padding:10px">\u2713 \u65e0\u660e\u663e\u98ce\u9669</div>';
+    }
+
+    dom.predictContent.innerHTML = html;
+  }
+
+  /* ========== 调度建议面板 ========== */
+  function _updateDispatchPanel() {
+    if (!_latestSnap) return;
+    var advice = Strategy.getDispatchAdvice(_latestSnap);
+    if (!advice || advice.length === 0) {
+      dom.dispatchContent.innerHTML = '<div class="panel-placeholder">\u6682\u65e0\u8c03\u5ea6\u5efa\u8bae</div>';
+      return;
+    }
+
+    var html = '';
+    var iconMap = {start: '\u25b6', stop: '\u25a0', info: '\u2139', warning: '\u26a0'};
+    for (var i = 0; i < advice.length; i++) {
+      var a = advice[i];
+      html += '<div class="dispatch-item type-' + a.type + '">';
+      html += '<span class="dispatch-icon">' + (iconMap[a.type] || '\u2139') + '</span>';
+      html += '<span class="dispatch-text">' + a.reason + '</span>';
+      html += '</div>';
+    }
+
+    // 当前策略信息
+    var strat = Strategy.getStrategyConfig();
+    html += '<div style="margin-top:8px;padding:6px;background:rgba(255,255,255,.03);border-radius:4px;font-size:10px;color:var(--text2)">';
+    html += '\u5f53\u524d\u7b56\u7565: <span style="color:' + strat.color + ';font-weight:600">' + strat.name + '</span>';
+    html += ' | \u76ee\u6807\u6db2\u4f4d: ' + (strat.targetLevelLow * 100).toFixed(0) + '%-' + (strat.targetLevelHigh * 100).toFixed(0) + '%';
+    html += '</div>';
+
+    dom.dispatchContent.innerHTML = html;
+  }
+
+  /* ========== 策略对比面板 ========== */
+  function _updateComparePanel() {
+    var comp = Strategy.getComparison();
+    if (!comp) {
+      dom.compareContent.innerHTML = '<div class="panel-placeholder">\u5207\u6362\u7b56\u7565\u540e\u663e\u793a\u5bf9\u6bd4\u6570\u636e</div>';
+      return;
+    }
+
+    var html = '';
+    html += '<div class="compare-header">';
+    html += '<span class="compare-from" style="background:' + comp.fromColor + '22;color:' + comp.fromColor + '">' + comp.fromStrategy + '</span>';
+    html += '<span class="compare-arrow">\u2192</span>';
+    html += '<span class="compare-to" style="background:' + comp.toColor + '22;color:' + comp.toColor + '">' + comp.toStrategy + '</span>';
+    html += '</div>';
+
+    html += '<table class="compare-table">';
+    html += '<tr><td>\u529f\u7387</td><td>' + comp.energy.powerBefore.toFixed(1) + ' kW</td><td>\u2192</td><td>' + comp.energy.powerAfter.toFixed(1) + ' kW</td></tr>';
+    html += '<tr><td>\u7d2f\u8ba1\u80fd\u8017</td><td>' + comp.energy.before.toFixed(2) + '</td><td>\u2192</td><td>' + comp.energy.after.toFixed(2) + '</td></tr>';
+    html += '<tr><td>\u544a\u8b66\u6570</td><td>' + comp.alarms.before + '</td><td>\u2192</td><td>' + comp.alarms.after + _deltaStr(comp.alarms.delta, true) + '</td></tr>';
+    html += '<tr><td>\u5b89\u5168\u4f59\u91cf</td><td>' + comp.safetyMargin.before.toFixed(1) + '%</td><td>\u2192</td><td>' + comp.safetyMargin.after.toFixed(1) + '%' + _deltaStr(comp.safetyMargin.delta, false) + '</td></tr>';
+    html += '<tr><td>\u6db2\u4f4d</td><td>' + comp.tankLevel.before.toFixed(0) + '%</td><td>\u2192</td><td>' + comp.tankLevel.after.toFixed(0) + '%</td></tr>';
+    html += '</table>';
+
+    dom.compareContent.innerHTML = html;
+  }
+
+  function _deltaStr(delta, invertColor) {
+    if (Math.abs(delta) < 0.01) return '';
+    var isPositive = delta > 0;
+    var cls = invertColor ? (isPositive ? 'negative' : 'positive') : (isPositive ? 'positive' : 'negative');
+    return ' <span class="compare-delta ' + cls + '">(' + (delta > 0 ? '+' : '') + delta.toFixed(1) + ')</span>';
+  }
+
   /* ========== 统一更新函数 (从同一帧快照) ========== */
   function _onEngineTick(snap) {
     _latestSnap = snap;
@@ -381,18 +575,31 @@ var App = (function () {
     // 2. 趋势图 — 从快照
     Trend.pushFromSnapshot(snap);
 
-    // 3. DOM 统计 — 从快照
+    // 3. 预测分析 — 从快照
+    Predictor.pushSnapshot(snap);
+
+    // 4. 策略指标更新 — 从快照
+    Strategy.updateMetrics(snap);
+
+    // 5. 更新 Canvas 风险热区
+    Renderer.setRiskData(Predictor.getRiskScores());
+
+    // 6. 更新趋势预测曲线
+    var preds = Predictor.getPredictions();
+    Trend.setPredictions(preds);
+
+    // 7. DOM 统计 — 从快照
     dom.statTotal.textContent = snap.totalEqCount;
     dom.statRunning.textContent = snap.runningCount;
     dom.statAlarm.textContent = snap.faultCount;
 
-    // 4. 报警列表 — 从快照
+    // 8. 报警列表 — 从快照
     _updateAlarmList(snap);
 
-    // 5. 设备面板 (如果选中了设备) — 从快照
+    // 9. 设备面板 (如果选中了设备) — 从快照
     if (_selectedEqId) _showEquipmentPanel(_selectedEqId);
 
-    // 6. 手动控制面板 (如果在手动模式) — 从快照
+    // 10. 手动控制面板 (如果在手动模式) — 从快照
     if (snap.modeId === Engine.MODE.MANUAL) _updateManualPanel();
   }
 
