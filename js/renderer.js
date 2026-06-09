@@ -16,6 +16,8 @@ var Renderer = (function () {
   var canvas, ctx, W, H;
   var _snap = null;           // 最新快照
   var _tankDisplayLevel = 0.6; // 平滑插值用
+  var _riskData = null;       // 风险热区数据 (来自 Predictive)
+  var _showHeatmap = true;    // 是否显示风险热区
   var isNight = false;
   var selectedId = null;
   var animTime = 0, lastFrameTime = 0, animFrameId = null, running = false;
@@ -125,6 +127,7 @@ var Renderer = (function () {
       drawLabels(_snap.equipment);
     }
     drawSelectionRing();
+    if (_showHeatmap && _riskData) drawRiskHeatmap();
 
     ctx.restore();
   }
@@ -491,6 +494,86 @@ var Renderer = (function () {
     }
   }
 
+  /* ========== 风险热区 ========== */
+  var RISK_COLORS = {
+    normal:  {r:0,   g:200, b:100, label:'#00c864'},
+    caution: {r:255, g:200, b:0,   label:'#ffc800'},
+    warning: {r:255, g:120, b:0,   label:'#ff7800'},
+    danger:  {r:255, g:50,  b:30,  label:'#ff321e'}
+  };
+
+  function drawRiskHeatmap() {
+    if (!_snap || !_riskData) return;
+    var eqArr = _snap.equipment;
+    var riskKeys = Object.keys(_riskData);
+    if (!riskKeys.length) return;
+
+    for (var i = 0; i < eqArr.length; i++) {
+      var eq = eqArr[i];
+      var risk = _riskData[eq.id];
+      if (!risk || risk.level === 'normal') continue;
+
+      var sz = SIZES[eq.type];
+      if (!sz && eq.type !== 'tank') continue;
+
+      var cx, cy, baseR;
+      if (eq.type === 'tank') {
+        var tg = DataModule.tankGeom;
+        cx = tg.rx * W + tg.rw * W / 2;
+        cy = tg.ry * H + tg.rh * H / 2;
+        baseR = Math.max(tg.rw * W, tg.rh * H) / 2;
+      } else {
+        cx = eq.rx * W;
+        cy = eq.ry * H;
+        baseR = Math.max(sz.rw * W, sz.rh * H) / 2;
+      }
+
+      var rc = RISK_COLORS[risk.level] || RISK_COLORS.caution;
+      var intensity = risk.score / 100;
+
+      // 脉冲动画 — 危险等级越高脉冲越快
+      var pulseSpeed = risk.level === 'danger' ? 6 : risk.level === 'warning' ? 4 : 2.5;
+      var pulse = 0.5 + 0.5 * Math.sin(animTime * pulseSpeed);
+      var alpha = 0.08 + intensity * 0.18 * pulse;
+
+      // 热力圆 — 多层渐变
+      var heatR = baseR + 12 + intensity * 25;
+      var gd = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, heatR);
+      gd.addColorStop(0, 'rgba(' + rc.r + ',' + rc.g + ',' + rc.b + ',' + (alpha * 1.2).toFixed(3) + ')');
+      gd.addColorStop(0.5, 'rgba(' + rc.r + ',' + rc.g + ',' + rc.b + ',' + (alpha * 0.6).toFixed(3) + ')');
+      gd.addColorStop(1, 'rgba(' + rc.r + ',' + rc.g + ',' + rc.b + ',0)');
+      ctx.fillStyle = gd;
+      ctx.beginPath();
+      ctx.arc(cx, cy, heatR, 0, 6.283);
+      ctx.fill();
+
+      // 外环脉冲 (仅 warning/danger)
+      if (risk.level === 'warning' || risk.level === 'danger') {
+        var ringR = heatR + pulse * 8;
+        ctx.strokeStyle = 'rgba(' + rc.r + ',' + rc.g + ',' + rc.b + ',' + (0.15 + pulse * 0.2).toFixed(3) + ')';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, ringR, 0, 6.283);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 风险评分标签
+      var labelY = cy - baseR - 10;
+      if (eq.type === 'tank') labelY = cy - baseR - 16;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      var labelW = 36, labelH = 14;
+      _rr(cx - labelW / 2, labelY - labelH / 2, labelW, labelH, 3);
+      ctx.fill();
+      ctx.fillStyle = rc.label;
+      ctx.font = 'bold ' + Math.max(9, W * 0.008) + 'px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(risk.score, cx, labelY);
+    }
+  }
+
   /* ========== 选择环 ========== */
   function drawSelectionRing() {
     if (!selectedId || !_snap) return;
@@ -553,6 +636,8 @@ var Renderer = (function () {
   function setNight(v) { isNight = !!v; }
   function setSelected(id) { selectedId = id || null; }
   function getFPS() { return perf.fps; }
+  function updateRiskData(risks) { _riskData = risks; }
+  function setShowHeatmap(v) { _showHeatmap = !!v; }
 
   function _rr(x, y, w, h, r) {
     ctx.beginPath();
@@ -570,6 +655,7 @@ var Renderer = (function () {
     updateFromSnapshot: updateFromSnapshot,
     setPaused: setPaused,
     setNight: setNight, setSelected: setSelected,
+    updateRiskData: updateRiskData, setShowHeatmap: setShowHeatmap,
     getFPS: getFPS
   };
 })();

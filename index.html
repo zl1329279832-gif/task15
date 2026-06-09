@@ -52,6 +52,15 @@
         <button class="fault-btn" data-fault="sensor_offline">⚠ 传感器离线</button>
         <button class="fault-btn" data-fault="pipe_leak">⚠ 管道泄漏</button>
       </div>
+
+      <!-- 策略切换栏 -->
+      <div id="strategyBar">
+        <span class="strategy-label">调度策略</span>
+        <button class="strategy-btn active" data-strategy="safety">安全优先</button>
+        <button class="strategy-btn" data-strategy="energy">节能优先</button>
+        <button class="strategy-btn" data-strategy="drainage">排涝优先</button>
+        <button class="heatmap-toggle" id="heatmapToggle" title="故障风险热区">热区</button>
+      </div>
     </div>
 
     <aside id="panel">
@@ -65,6 +74,34 @@
       <div class="panel-section" id="panelAlarm">
         <h2>告警列表</h2>
         <ul id="alarmList"></ul>
+      </div>
+
+      <!-- 预测性维护建议 -->
+      <div class="panel-section" id="panelPredictive">
+        <h2>预测性维护</h2>
+        <div id="predictiveContent">
+          <div class="pred-summary" id="predSummary">
+            <div class="pred-stat">
+              <span class="pred-stat-label">风险设备</span>
+              <span class="pred-stat-val" id="predRiskCount">0</span>
+            </div>
+            <div class="pred-stat">
+              <span class="pred-stat-label">故障预警</span>
+              <span class="pred-stat-val pred-warn" id="predFaultCount">0</span>
+            </div>
+            <div class="pred-stat">
+              <span class="pred-stat-label">当前策略</span>
+              <span class="pred-stat-val pred-strategy" id="predStrategyLabel">安全优先</span>
+            </div>
+          </div>
+          <ul id="suggestionList" class="suggestion-list"></ul>
+        </div>
+      </div>
+
+      <!-- 策略对比面板 -->
+      <div class="panel-section" id="panelComparison" style="display:none">
+        <h2>策略效果对比</h2>
+        <div id="comparisonContent" class="comparison-grid"></div>
       </div>
 
       <!-- 手动控制面板 (仅手动模式可见) -->
@@ -89,6 +126,7 @@
   <script src="js/engine.js"></script>
   <script src="js/renderer.js"></script>
   <script src="js/trend.js"></script>
+  <script src="js/predictive.js"></script>
   <script src="js/app.js"></script>
   <script src="js/verify.js"></script>
 </body>

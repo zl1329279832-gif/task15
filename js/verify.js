@@ -77,6 +77,7 @@ var Verify = (function () {
     // ===== Step 0: Reset to clean state =====
     Engine.reset();
     Trend.reset();
+    Predictive.reset();
     _resetFaultButtons();
     await _wait(300);
 
@@ -193,6 +194,7 @@ var Verify = (function () {
     // ===== Step 9: 重置 =====
     var r9 = Engine.reset();
     Trend.reset();
+    Predictive.reset();
     await _wait(300);
     var snap9 = _getSnap();
     _assert(9, '重置成功', r9);

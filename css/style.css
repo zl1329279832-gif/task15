@@ -152,6 +152,99 @@ body{display:flex;flex-direction:column}
   margin-top:8px;
 }
 
+/* ===== Strategy bar ===== */
+#strategyBar{
+  position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:5px;z-index:5;
+  background:rgba(10,14,39,.88);border:1px solid var(--border);
+  border-radius:6px;padding:4px 10px;
+  backdrop-filter:blur(6px);
+}
+.strategy-label{
+  font-size:11px;color:var(--text2);margin-right:4px;white-space:nowrap;
+}
+.strategy-btn{
+  padding:4px 12px;border:1px solid var(--border);border-radius:4px;
+  background:rgba(13,18,48,.6);color:var(--text2);font-size:11px;
+  cursor:pointer;transition:all .25s;white-space:nowrap;
+}
+.strategy-btn:hover{border-color:var(--accent);color:var(--text)}
+.strategy-btn.active{background:var(--accent2);border-color:var(--accent);color:#fff;font-weight:600}
+.strategy-btn[data-strategy="energy"].active{background:#1a6030;border-color:var(--green);color:var(--green)}
+.strategy-btn[data-strategy="drainage"].active{background:#1a3060;border-color:var(--blue);color:var(--blue)}
+.heatmap-toggle{
+  padding:4px 8px;border:1px solid rgba(255,120,0,.3);border-radius:4px;
+  background:rgba(255,120,0,.1);color:#ff9944;font-size:10px;font-weight:600;
+  cursor:pointer;transition:all .2s;margin-left:4px;
+}
+.heatmap-toggle:hover{background:rgba(255,120,0,.2);border-color:#ff9944}
+.heatmap-toggle.off{opacity:0.4;border-color:var(--border);color:var(--text2);background:transparent}
+
+/* ===== Predictive panel ===== */
+.pred-summary{
+  display:flex;gap:8px;margin-bottom:10px;
+}
+.pred-stat{
+  flex:1;background:rgba(255,255,255,.03);border:1px solid var(--border);
+  border-radius:5px;padding:8px 6px;text-align:center;
+}
+.pred-stat-label{font-size:10px;color:var(--text2);display:block;margin-bottom:3px}
+.pred-stat-val{font-size:15px;font-weight:700;font-family:var(--mono);color:var(--text)}
+.pred-stat-val.pred-warn{color:var(--yellow)}
+.pred-stat-val.pred-strategy{font-size:11px;color:var(--accent);font-family:var(--font)}
+
+/* ===== Suggestion list ===== */
+.suggestion-list{list-style:none}
+.suggestion-list li{
+  padding:7px 8px;border-radius:4px;margin-bottom:4px;font-size:11px;
+  line-height:1.5;border-left:3px solid transparent;
+  display:flex;align-items:flex-start;gap:6px;
+}
+.suggestion-list li .sug-icon{flex-shrink:0;font-size:12px;margin-top:1px}
+.suggestion-list li .sug-text{flex:1}
+.suggestion-list li.sug-high{
+  background:rgba(255,68,85,.06);border-left-color:var(--red);color:var(--red);
+}
+.suggestion-list li.sug-medium{
+  background:rgba(255,170,0,.06);border-left-color:var(--yellow);color:var(--yellow);
+}
+.suggestion-list li.sug-low{
+  background:rgba(0,212,255,.04);border-left-color:var(--accent);color:var(--accent);
+}
+.suggestion-empty{color:var(--text2);font-size:11px;text-align:center;padding:16px 0}
+
+/* ===== Comparison panel ===== */
+.comparison-grid{display:flex;flex-direction:column;gap:8px}
+.comp-row{
+  display:flex;align-items:center;gap:6px;font-size:11px;
+}
+.comp-label{
+  width:72px;flex-shrink:0;color:var(--text2);text-align:right;font-size:10px;
+}
+.comp-bar-wrap{
+  flex:1;display:flex;flex-direction:column;gap:3px;
+}
+.comp-bar-item{
+  display:flex;align-items:center;gap:6px;
+}
+.comp-bar-name{
+  width:56px;flex-shrink:0;font-size:10px;color:var(--text2);text-align:right;
+}
+.comp-bar{
+  flex:1;height:14px;background:rgba(255,255,255,.04);border-radius:3px;
+  overflow:hidden;position:relative;
+}
+.comp-bar-fill{
+  height:100%;border-radius:3px;transition:width .6s ease;min-width:2px;
+}
+.comp-bar-val{
+  font-size:10px;font-family:var(--mono);color:var(--text);min-width:44px;text-align:left;
+}
+.comp-prev .comp-bar-fill{background:var(--gray)}
+.comp-curr .comp-bar-fill{background:var(--accent)}
+.comp-better{color:var(--green) !important}
+.comp-worse{color:var(--red) !important}
+
 /* ===== Footer ===== */
 #footer{
   display:flex;align-items:center;justify-content:space-between;
@@ -168,6 +261,8 @@ body{display:flex;flex-direction:column}
 @media(max-width:900px){
   #panel{width:260px}
   .mode-btn,.fault-btn{padding:4px 8px;font-size:11px}
+  .strategy-btn{padding:3px 8px;font-size:10px}
+  .pred-summary{flex-wrap:wrap}
 }
 @media(max-width:640px){
   #panel{
@@ -177,4 +272,5 @@ body{display:flex;flex-direction:column}
   #panel.open{transform:translateX(0)}
   #modeBar{flex-wrap:wrap;justify-content:center;bottom:80px}
   #faultBar{flex-wrap:wrap;justify-content:center}
+  #strategyBar{flex-wrap:wrap;justify-content:center;top:4px;padding:3px 6px}
 }

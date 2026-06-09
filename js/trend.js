@@ -14,6 +14,7 @@ var Trend = (function () {
   var _canvas = null;
   var _ctx = null;
   var _W = 0, _H = 0;
+  var _predictions = null;     // 预测曲线数据 (来自 Predictive)
 
   // 三条曲线配置
   var SERIES = [
@@ -125,6 +126,69 @@ var Trend = (function () {
       _ctx.stroke();
     }
 
+    // 绘制预测曲线 (虚线)
+    if (_predictions && n >= 10) {
+      var predSeries = [
+        {data: _predictions.levelTrend,  color: '#4488ff', min: 0, max: 100, scale: 100},
+        {data: _predictions.flowTrend,   color: '#00ff88', min: 0, max: 800, scale: 1},
+        {data: _predictions.energyTrend, color: '#aa66ff', min: 0, max: 300, scale: 1}
+      ];
+
+      // 预测起点在实际数据末端
+      var predStartX = padL + ((n - 1) / (MAX_SAMPLES - 1)) * plotW;
+      // 预测区域背景
+      if (predStartX < padL + plotW) {
+        _ctx.fillStyle = 'rgba(255,255,255,0.015)';
+        _ctx.fillRect(predStartX, padT, padL + plotW - predStartX, plotH);
+        // 分界线
+        _ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        _ctx.lineWidth = 1;
+        _ctx.setLineDash([3, 3]);
+        _ctx.beginPath();
+        _ctx.moveTo(predStartX, padT);
+        _ctx.lineTo(predStartX, padT + plotH);
+        _ctx.stroke();
+        _ctx.setLineDash([]);
+        // "预测" 标签
+        _ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        _ctx.font = '8px sans-serif';
+        _ctx.textAlign = 'left';
+        _ctx.fillText('\u9884\u6d4b', predStartX + 2, padT + 10);
+      }
+
+      var predSlots = MAX_SAMPLES - n; // 预测可用的X空间 (采样点数)
+      if (predSlots < 5) predSlots = Math.round(MAX_SAMPLES * 0.2); // 至少留20%空间
+
+      for (var ps = 0; ps < predSeries.length; ps++) {
+        var psr = predSeries[ps];
+        var pdata = psr.data;
+        if (!pdata || pdata.length < 2) continue;
+
+        _ctx.strokeStyle = psr.color;
+        _ctx.globalAlpha = 0.5;
+        _ctx.lineWidth = 1.2;
+        _ctx.setLineDash([5, 4]);
+        _ctx.beginPath();
+
+        // 从实际数据最后一个点开始
+        var lastActualVal = _buffer[n - 1][SERIES[ps].key] * SERIES[ps].scale;
+        var lastRatio = _clamp((lastActualVal - psr.min) / (psr.max - psr.min), 0, 1);
+        _ctx.moveTo(predStartX, padT + plotH * (1 - lastRatio));
+
+        var step = Math.max(1, Math.floor(pdata.length / predSlots));
+        for (var pi = 0; pi < pdata.length; pi += step) {
+          var pval = pdata[pi].value * psr.scale;
+          var pratio = _clamp((pval - psr.min) / (psr.max - psr.min), 0, 1);
+          var px = predStartX + ((pi + 1) / pdata.length) * (padL + plotW - predStartX);
+          if (px > padL + plotW) px = padL + plotW;
+          _ctx.lineTo(px, padT + plotH * (1 - pratio));
+        }
+        _ctx.stroke();
+        _ctx.setLineDash([]);
+        _ctx.globalAlpha = 1;
+      }
+    }
+
     // 图例
     var legX = padL + 4;
     var legY = padT + 10;
@@ -159,6 +223,7 @@ var Trend = (function () {
   function reset() {
     _buffer = [];
     _pushCounter = 0;
+    _predictions = null;
   }
 
   /**
@@ -168,12 +233,17 @@ var Trend = (function () {
     return _buffer.length;
   }
 
+  function setPredictions(pred) {
+    _predictions = pred;
+  }
+
   return {
     init: init,
     pushFromSnapshot: pushFromSnapshot,
     draw: draw,
     reset: reset,
     resize: _resize,
-    getLength: getLength
+    getLength: getLength,
+    setPredictions: setPredictions
   };
 })();

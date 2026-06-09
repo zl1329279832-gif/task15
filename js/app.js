@@ -15,6 +15,7 @@ var App = (function () {
   var _fpsTimer = null;
   var _resizeTimer = null;
   var _trendDrawTimer = null;
+  var _predictiveTimer = null;
 
   /* ========== 状态 ========== */
   var _latestSnap = null;
@@ -44,6 +45,14 @@ var App = (function () {
     dom.manualPanel = document.getElementById('manualPanel');
     dom.trendCanvas = document.getElementById('trendCanvas');
     dom.sceneLabel = document.getElementById('sceneLabel');
+    dom.strategyBar = document.getElementById('strategyBar');
+    dom.heatmapToggle = document.getElementById('heatmapToggle');
+    dom.predRiskCount = document.getElementById('predRiskCount');
+    dom.predFaultCount = document.getElementById('predFaultCount');
+    dom.predStrategyLabel = document.getElementById('predStrategyLabel');
+    dom.suggestionList = document.getElementById('suggestionList');
+    dom.panelComparison = document.getElementById('panelComparison');
+    dom.comparisonContent = document.getElementById('comparisonContent');
   }
 
   /* ========== 初始化 ========== */
@@ -71,6 +80,9 @@ var App = (function () {
 
     // 启动趋势绘制
     _startTrendDraw();
+
+    // 启动预测面板更新 (每秒更新)
+    _startPredictiveDraw();
 
     // 产生初始快照
     _latestSnap = Engine.getSnapshot();
@@ -110,6 +122,17 @@ var App = (function () {
     if (_trendDrawTimer) { clearInterval(_trendDrawTimer); _trendDrawTimer = null; }
   }
 
+  function _startPredictiveDraw() {
+    if (_predictiveTimer) clearInterval(_predictiveTimer);
+    _predictiveTimer = setInterval(function () {
+      _updatePredictivePanel();
+      _updateComparisonPanel();
+    }, 1000); // 1 Hz
+  }
+  function _stopPredictiveDraw() {
+    if (_predictiveTimer) { clearInterval(_predictiveTimer); _predictiveTimer = null; }
+  }
+
   function _updateClock() {
     var n = new Date(), p = function (v) { return v < 10 ? '0' + v : '' + v; };
     dom.headerTime.textContent = n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate())
@@ -139,6 +162,15 @@ var App = (function () {
 
     // 手动控制 (事件委托)
     dom.manualPanel.addEventListener('click', _onManualClick, false);
+
+    // 策略切换按钮
+    var stratBtns = dom.strategyBar.querySelectorAll('.strategy-btn');
+    for (var sb = 0; sb < stratBtns.length; sb++) {
+      stratBtns[sb].addEventListener('click', _onStrategyBtnClick, false);
+    }
+
+    // 热区开关
+    dom.heatmapToggle.addEventListener('click', _onHeatmapToggle, false);
 
     // 窗口 resize
     window.addEventListener('resize', function () {
@@ -173,11 +205,23 @@ var App = (function () {
   function _doReset() {
     Engine.reset();
     Trend.reset();
+    Predictive.reset();
     _selectedEqId = null;
     Renderer.setSelected(null);
+    Renderer.updateRiskData(null);
     dom.panelContent.innerHTML = '<div class="panel-placeholder">\u70b9\u51fb\u753b\u5e03\u4e2d\u7684\u8bbe\u5907\u67e5\u770b\u8be6\u60c5</div>';
+    dom.panelComparison.style.display = 'none';
+    // 重置策略按钮
+    var stratBtns = dom.strategyBar.querySelectorAll('.strategy-btn');
+    for (var i = 0; i < stratBtns.length; i++) {
+      stratBtns[i].classList.remove('active');
+      if (stratBtns[i].getAttribute('data-strategy') === 'safety') {
+        stratBtns[i].classList.add('active');
+      }
+    }
     _updateModeUI();
     _updateManualPanel();
+    _updatePredictivePanel();
     return true;
   }
 
@@ -235,6 +279,32 @@ var App = (function () {
         Engine.manualOverride(eqId, newState);
       }
     }
+  }
+
+  /* ========== 策略切换 ========== */
+  function _onStrategyBtnClick(e) {
+    var btn = e.currentTarget;
+    var strategyId = btn.getAttribute('data-strategy');
+    if (!strategyId) return;
+    var changed = Predictive.setStrategy(strategyId);
+    if (changed) {
+      // 更新按钮高亮
+      var btns = dom.strategyBar.querySelectorAll('.strategy-btn');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+      btn.classList.add('active');
+      // 显示对比面板
+      dom.panelComparison.style.display = 'block';
+      // 立即更新
+      _updatePredictivePanel();
+      _updateComparisonPanel();
+    }
+  }
+
+  /* ========== 热区开关 ========== */
+  function _onHeatmapToggle() {
+    var btn = dom.heatmapToggle;
+    var isOff = btn.classList.toggle('off');
+    Renderer.setShowHeatmap(!isOff);
   }
 
   function _updateManualPanel() {
@@ -381,18 +451,24 @@ var App = (function () {
     // 2. 趋势图 — 从快照
     Trend.pushFromSnapshot(snap);
 
-    // 3. DOM 统计 — 从快照
+    // 3. 预测模块 — 从快照
+    Predictive.pushSnapshot(snap);
+    var analysis = Predictive.getAnalysis();
+    Renderer.updateRiskData(analysis.risks);
+    Trend.setPredictions(analysis.predictions);
+
+    // 4. DOM 统计 — 从快照
     dom.statTotal.textContent = snap.totalEqCount;
     dom.statRunning.textContent = snap.runningCount;
     dom.statAlarm.textContent = snap.faultCount;
 
-    // 4. 报警列表 — 从快照
+    // 5. 报警列表 — 从快照
     _updateAlarmList(snap);
 
-    // 5. 设备面板 (如果选中了设备) — 从快照
+    // 6. 设备面板 (如果选中了设备) — 从快照
     if (_selectedEqId) _showEquipmentPanel(_selectedEqId);
 
-    // 6. 手动控制面板 (如果在手动模式) — 从快照
+    // 7. 手动控制面板 (如果在手动模式) — 从快照
     if (snap.modeId === Engine.MODE.MANUAL) _updateManualPanel();
   }
 
@@ -415,6 +491,126 @@ var App = (function () {
       html += '</li>';
     }
     dom.alarmList.innerHTML = html;
+  }
+
+  /* ========== 预测维护面板更新 ========== */
+  function _updatePredictivePanel() {
+    var analysis = Predictive.getAnalysis();
+    var strat = Predictive.getStrategyConfig();
+
+    // 统计风险设备数
+    var riskCount = 0;
+    var riskKeys = Object.keys(analysis.risks);
+    for (var i = 0; i < riskKeys.length; i++) {
+      if (analysis.risks[riskKeys[i]].level !== 'normal') riskCount++;
+    }
+    dom.predRiskCount.textContent = riskCount;
+    dom.predFaultCount.textContent = analysis.faults.length;
+    dom.predStrategyLabel.textContent = strat.name;
+
+    // 建议列表
+    var suggestions = analysis.suggestions;
+    if (!suggestions || suggestions.length === 0) {
+      dom.suggestionList.innerHTML = '<li class="suggestion-empty">\u7cfb\u7edf\u8fd0\u884c\u6b63\u5e38\uff0c\u6682\u65e0\u5efa\u8bae</li>';
+      return;
+    }
+    var html = '';
+    var iconMap = {high: '\u26a0', medium: '\u25b3', low: '\u2139'};
+    for (var s = 0; s < suggestions.length; s++) {
+      var sug = suggestions[s];
+      html += '<li class="sug-' + sug.priority + '">';
+      html += '<span class="sug-icon">' + (iconMap[sug.priority] || '\u2022') + '</span>';
+      html += '<span class="sug-text">' + sug.text + '</span>';
+      html += '</li>';
+    }
+    dom.suggestionList.innerHTML = html;
+  }
+
+  /* ========== 策略对比面板更新 ========== */
+  function _updateComparisonPanel() {
+    var analysis = Predictive.getAnalysis();
+    var comp = analysis.comparison;
+    if (!comp) {
+      dom.panelComparison.style.display = 'none';
+      return;
+    }
+    dom.panelComparison.style.display = 'block';
+
+    var prev = comp.previous;
+    var curr = comp.current;
+
+    // 对比指标
+    var metrics = [
+      {
+        label: '\u80fd\u8017 (kWh)',
+        prevVal: prev.energyKWh,
+        currVal: curr.energyKWh,
+        maxVal: Math.max(prev.energyKWh, curr.energyKWh, 1),
+        format: function(v) { return v.toFixed(2); },
+        lowerBetter: true
+      },
+      {
+        label: '\u544a\u8b66\u6b21\u6570',
+        prevVal: prev.alarmCount,
+        currVal: curr.alarmCount,
+        maxVal: Math.max(prev.alarmCount, curr.alarmCount, 1),
+        format: function(v) { return Math.round(v); },
+        lowerBetter: true
+      },
+      {
+        label: '\u5b89\u5168\u4f59\u91cf',
+        prevVal: prev.avgSafetyMargin * 100,
+        currVal: curr.avgSafetyMargin * 100,
+        maxVal: 50,
+        format: function(v) { return v.toFixed(1) + '%'; },
+        lowerBetter: false
+      },
+      {
+        label: '\u6cf5\u8fd0\u884c(h)',
+        prevVal: prev.pumpHours,
+        currVal: curr.pumpHours,
+        maxVal: Math.max(prev.pumpHours, curr.pumpHours, 0.1),
+        format: function(v) { return v.toFixed(2); },
+        lowerBetter: true
+      }
+    ];
+
+    var html = '';
+    for (var m = 0; m < metrics.length; m++) {
+      var met = metrics[m];
+      var prevPct = Math.min(100, (met.prevVal / met.maxVal) * 100);
+      var currPct = Math.min(100, (met.currVal / met.maxVal) * 100);
+
+      // 判断优劣
+      var diff = met.currVal - met.prevVal;
+      var isBetter = met.lowerBetter ? diff < -0.01 : diff > 0.01;
+      var isWorse = met.lowerBetter ? diff > 0.01 : diff < -0.01;
+      var diffClass = isBetter ? 'comp-better' : isWorse ? 'comp-worse' : '';
+
+      html += '<div class="comp-row">';
+      html += '<div class="comp-label">' + met.label + '</div>';
+      html += '<div class="comp-bar-wrap">';
+      // 前策略
+      html += '<div class="comp-bar-item comp-prev">';
+      html += '<div class="comp-bar-name">' + prev.name + '</div>';
+      html += '<div class="comp-bar"><div class="comp-bar-fill" style="width:' + prevPct.toFixed(1) + '%"></div></div>';
+      html += '<div class="comp-bar-val">' + met.format(met.prevVal) + '</div>';
+      html += '</div>';
+      // 当前策略
+      html += '<div class="comp-bar-item comp-curr">';
+      html += '<div class="comp-bar-name">' + curr.name + '</div>';
+      html += '<div class="comp-bar"><div class="comp-bar-fill" style="width:' + currPct.toFixed(1) + '%"></div></div>';
+      html += '<div class="comp-bar-val ' + diffClass + '">' + met.format(met.currVal) + '</div>';
+      html += '</div>';
+      html += '</div></div>';
+    }
+
+    // 采样时长信息
+    html += '<div style="text-align:center;font-size:9px;color:var(--text2);margin-top:6px">';
+    html += prev.name + ': ' + prev.sampleCount + '\u79d2 | ' + curr.name + ': ' + curr.sampleCount + '\u79d2';
+    html += '</div>';
+
+    dom.comparisonContent.innerHTML = html;
   }
 
   /* ========== 初始化入口 ========== */
