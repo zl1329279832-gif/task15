@@ -16,6 +16,7 @@ var App = (function () {
   var _resizeTimer = null;
   var _trendDrawTimer = null;
   var _predictUpdateTimer = null;
+  var _strategySwitchDebounce = null;  // 策略切换防抖定时器
 
   /* ========== 状态 ========== */
   var _latestSnap = null;
@@ -200,6 +201,11 @@ var App = (function () {
   }
 
   function _doReset() {
+    // 清理策略切换防抖定时器
+    if (_strategySwitchDebounce) {
+      clearTimeout(_strategySwitchDebounce);
+      _strategySwitchDebounce = null;
+    }
     Engine.reset();
     Trend.reset();
     Predictor.reset();
@@ -420,6 +426,13 @@ var App = (function () {
 
     var result = Strategy.switchStrategy(stratId, _latestSnap);
     if (result) {
+      var epoch = Strategy.getEpoch();
+
+      // 同步通知所有模块清除旧策略缓存
+      Predictor.onStrategySwitch(epoch);
+      Trend.onStrategySwitch(epoch);
+      Renderer.onStrategySwitch(epoch);
+
       // 更新按钮高亮
       var btns = dom.strategyBar.querySelectorAll('.strategy-btn');
       for (var i = 0; i < btns.length; i++) {
@@ -428,6 +441,24 @@ var App = (function () {
           btns[i].classList.add('active');
         }
       }
+
+      // 防抖刷新：快速连续切换时只执行最后一次的面板更新
+      if (_strategySwitchDebounce) {
+        clearTimeout(_strategySwitchDebounce);
+        _strategySwitchDebounce = null;
+      }
+      _strategySwitchDebounce = setTimeout(function () {
+        _strategySwitchDebounce = null;
+        // 立即用最新快照重算并刷新所有面板
+        if (_latestSnap) {
+          Renderer.setRiskData(Predictor.getRiskScores());
+          Trend.setPredictions(Predictor.getPredictions());
+        }
+        _updatePredictPanel();
+        _updateDispatchPanel();
+        _updateComparePanel();
+        Trend.draw();
+      }, 80);
     }
   }
 
@@ -624,6 +655,25 @@ var App = (function () {
     dom.alarmList.innerHTML = html;
   }
 
+  /**
+   * 编程式策略切换 (供 Verify 等外部调用)
+   */
+  function _switchStrategyById(stratId) {
+    var result = Strategy.switchStrategy(stratId, _latestSnap);
+    if (result) {
+      var epoch = Strategy.getEpoch();
+      Predictor.onStrategySwitch(epoch);
+      Trend.onStrategySwitch(epoch);
+      Renderer.onStrategySwitch(epoch);
+      // 立即刷新（非防抖，测试场景需要同步结果）
+      if (_latestSnap) {
+        Renderer.setRiskData(Predictor.getRiskScores());
+        Trend.setPredictions(Predictor.getPredictions());
+      }
+    }
+    return result;
+  }
+
   /* ========== 初始化入口 ========== */
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', _init);
@@ -634,6 +684,7 @@ var App = (function () {
   return {
     // 供 Verify 使用
     getLatestSnapshot: function () { return _latestSnap; },
+    switchStrategy: _switchStrategyById,
     doReset: _doReset
   };
 })();

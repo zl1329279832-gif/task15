@@ -74,6 +74,7 @@ var Strategy = (function () {
   var _lastSnapEnergy = 0;
   var _lastSnapAlarmCount = 0;
   var _lastSnapTankLevel = 0.6;
+  var _epoch = 0;                    // 策略数据版本号，每次切换递增
 
   /* ========== 指标计算 ========== */
   function _computeMetrics(snap) {
@@ -198,6 +199,9 @@ var Strategy = (function () {
   function switchStrategy(newId, snap) {
     if (!STRATEGIES[newId] || newId === _currentStrategy) return false;
 
+    // 递增数据版本号
+    _epoch++;
+
     // 记录切换前指标
     _metricsBefore = _computeMetrics(snap);
     _prevStrategy = _currentStrategy;
@@ -205,12 +209,14 @@ var Strategy = (function () {
     // 切换
     _currentStrategy = newId;
     _switchTime = Date.now();
+    _metricsAfter = null; // 清除旧策略的后指标，等待新策略积累
 
     // 记录切换历史
     _switchHistory.push({
       from: _prevStrategy,
       to: newId,
       time: _switchTime,
+      epoch: _epoch,
       metricsBefore: _metricsBefore
     });
     if (_switchHistory.length > 20) _switchHistory.shift();
@@ -287,6 +293,10 @@ var Strategy = (function () {
     return _switchHistory;
   }
 
+  function getEpoch() {
+    return _epoch;
+  }
+
   function reset() {
     _currentStrategy = 'safety';
     _prevStrategy = null;
@@ -297,6 +307,7 @@ var Strategy = (function () {
     _lastSnapEnergy = 0;
     _lastSnapAlarmCount = 0;
     _lastSnapTankLevel = 0.6;
+    _epoch = 0;
   }
 
   return {
@@ -308,6 +319,7 @@ var Strategy = (function () {
     getComparison: getComparison,
     getDispatchAdvice: getDispatchAdvice,
     getSwitchHistory: getSwitchHistory,
+    getEpoch: getEpoch,
     reset: reset,
     STRATEGIES: STRATEGIES
   };

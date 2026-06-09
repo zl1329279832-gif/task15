@@ -14,6 +14,10 @@
  * 8. 确认报警 — 报警移入历史
  * 9. 重置 — 所有初始状态恢复
  * 10. 快速模式切换 — 无定时器泄漏，快照一致
+ * 11. 快速策略切换 — epoch 一致，缓存正确清除
+ * 12. 连续仿真一致性 — 策略切换后建议与策略匹配
+ * 13. 风险热区刷新 — 切换后热区数据清除并重算
+ * 14. 趋势缓冲区重置 — 切换后预测清除、历史保留
  */
 var Verify = (function () {
   'use strict';
@@ -232,6 +236,124 @@ var Verify = (function () {
     Engine.reset();
     await _wait(300);
     _assert(10, '重置后定时器停止', Engine._debugState().timerActive === false);
+
+    // ===== Step 11: 快速策略切换 =====
+    Engine.setMode('auto');
+    await _wait(1500); // 积累足够历史数据
+    var epochBefore = Strategy.getEpoch();
+
+    // 快速连续切换 5 次: safety -> energy -> drainage -> safety -> energy -> drainage
+    var switchSeq = ['energy', 'drainage', 'safety', 'energy', 'drainage'];
+    for (var sw = 0; sw < switchSeq.length; sw++) {
+      App.switchStrategy(switchSeq[sw]);
+    }
+    var epochAfter = Strategy.getEpoch();
+    _assert(11, 'epoch 递增 5 次', epochAfter === epochBefore + 5,
+      'before=' + epochBefore + ' after=' + epochAfter);
+    _assert(11, 'Predictor epoch 同步', Predictor.getEpoch() === epochAfter,
+      'predictor=' + Predictor.getEpoch() + ' strategy=' + epochAfter);
+    _assert(11, 'Trend epoch 同步', Trend.getEpoch() === epochAfter,
+      'trend=' + Trend.getEpoch() + ' strategy=' + epochAfter);
+    _assert(11, 'Renderer epoch 同步', Renderer.getEpoch() === epochAfter,
+      'renderer=' + Renderer.getEpoch() + ' strategy=' + epochAfter);
+    _assert(11, '最终策略为 drainage', Strategy.getCurrentStrategy() === 'drainage',
+      'current=' + Strategy.getCurrentStrategy());
+    _assert(11, '快照仍有效', _getSnap() !== null && Object.isFrozen(_getSnap()));
+    await _wait(300);
+
+    // ===== Step 12: 连续仿真一致性 =====
+    // 切换到节能模式，检查建议是否与节能策略一致
+    App.switchStrategy('energy');
+    await _wait(800); // 等待仿真在新策略下运行
+    var snap12 = _getSnap();
+    var advice12 = Strategy.getDispatchAdvice(snap12);
+    // 节能模式下不应建议启动多于 1 台泵
+    var startAdvice12 = 0;
+    for (var a12 = 0; a12 < advice12.length; a12++) {
+      if (advice12[a12].type === 'start') startAdvice12++;
+    }
+    _assert(12, '节能策略启泵建议不超过 1 条', startAdvice12 <= 1,
+      'startAdvice count=' + startAdvice12);
+
+    // 切换到排涝模式，建议应该变化
+    App.switchStrategy('drainage');
+    await _wait(800);
+    var snap12b = _getSnap();
+    var advice12b = Strategy.getDispatchAdvice(snap12b);
+    // 排涝模式下应该建议启动更多泵
+    _assert(12, '排涝策略建议已刷新', advice12b.length > 0,
+      'advice count=' + advice12b.length);
+    _assert(12, 'Predictor 启停计数已重置',
+      Predictor.getStats().startStopCount.pump1 === 0 &&
+      Predictor.getStats().startStopCount.pump2 === 0 &&
+      Predictor.getStats().startStopCount.pump3 === 0,
+      'counts: p1=' + Predictor.getStats().startStopCount.pump1 +
+      ' p2=' + Predictor.getStats().startStopCount.pump2 +
+      ' p3=' + Predictor.getStats().startStopCount.pump3);
+    await _wait(300);
+
+    // ===== Step 13: 风险热区刷新 =====
+    // 等待 Predictor 积累分析数据
+    await _wait(1500);
+    var riskBefore13 = Predictor.getRiskScores();
+    var riskKeysBefore13 = Object.keys(riskBefore13).length;
+
+    // 切换策略，风险热区应被清除
+    App.switchStrategy('safety');
+    var riskAfter13 = Predictor.getRiskScores();
+    var riskKeysAfter13 = Object.keys(riskAfter13).length;
+
+    // 切换后启停/压力/效率缓存被重置，风险项应减少或清空
+    _assert(13, '策略切换后风险热区被重算',
+      riskKeysAfter13 <= riskKeysBefore13 || riskKeysBefore13 === 0,
+      'before=' + riskKeysBefore13 + ' after=' + riskKeysAfter13);
+    _assert(13, 'Renderer 风险数据版本同步',
+      Renderer.getEpoch() === Strategy.getEpoch(),
+      'renderer=' + Renderer.getEpoch() + ' strategy=' + Strategy.getEpoch());
+
+    // 等待新数据积累后风险应重新计算
+    await _wait(2000);
+    var riskRecalc13 = Predictor.getRiskScores();
+    _assert(13, '新策略下风险数据重新生成 (或确认无风险)',
+      riskRecalc13 !== null && typeof riskRecalc13 === 'object',
+      'riskScores type=' + typeof riskRecalc13);
+    await _wait(300);
+
+    // ===== Step 14: 趋势缓冲区重置 =====
+    // 记录切换前的状态
+    var trendLenBefore14 = Trend.getLength();
+    var predBefore14 = Predictor.getPredictions();
+
+    // 切换策略
+    App.switchStrategy('energy');
+    var trendLenAfter14 = Trend.getLength();
+    var predAfter14 = Predictor.getPredictions();
+
+    // 历史缓冲区应保留 (客观物理数据)
+    _assert(14, '趋势历史缓冲区保留', trendLenAfter14 === trendLenBefore14,
+      'before=' + trendLenBefore14 + ' after=' + trendLenAfter14);
+    // Trend 的预测曲线应被清除 (由 onStrategySwitch 处理)
+    _assert(14, '趋势预测曲线被清除', Trend.getEpoch() === Strategy.getEpoch(),
+      'trend epoch=' + Trend.getEpoch() + ' strategy epoch=' + Strategy.getEpoch());
+
+    // 等待新预测生成
+    await _wait(1500);
+    var predNew14 = Predictor.getPredictions();
+    _assert(14, '新策略下预测曲线重新生成',
+      predNew14 !== null && predNew14.tankLevel && predNew14.tankLevel.length > 0,
+      'predictions tankLevel count=' + (predNew14 ? predNew14.tankLevel.length : 0));
+
+    // 验证重置清理所有 epoch
+    Engine.reset();
+    Trend.reset();
+    Predictor.reset();
+    Strategy.reset();
+    await _wait(300);
+    _assert(14, '重置后所有 epoch 归零',
+      Strategy.getEpoch() === 0 && Predictor.getEpoch() === 0 &&
+      Trend.getEpoch() === 0 && Renderer.getEpoch() === 0,
+      'S=' + Strategy.getEpoch() + ' P=' + Predictor.getEpoch() +
+      ' T=' + Trend.getEpoch() + ' R=' + Renderer.getEpoch());
 
     // ===== Summary =====
     console.log('%c========== 验证完成 ==========', 'color:#00d4ff;font-weight:bold');

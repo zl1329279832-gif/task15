@@ -16,6 +16,7 @@ var Trend = (function () {
   var _canvas = null;
   var _ctx = null;
   var _W = 0, _H = 0;
+  var _epoch = 0;             // 策略数据版本号
 
   // 三条曲线配置
   var SERIES = [
@@ -219,12 +220,28 @@ var Trend = (function () {
   function _clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
   /**
+   * 策略切换回调 — 清除旧策略的预测曲线，保留历史趋势
+   */
+  function onStrategySwitch(epoch) {
+    _epoch = epoch;
+    // 预测曲线基于策略语境，必须清除
+    _predictions = null;
+    // 重置采样计数器，确保下次 tick 立即采样
+    _pushCounter = PUSH_INTERVAL - 1;
+  }
+
+  function getEpoch() {
+    return _epoch;
+  }
+
+  /**
    * 重置
    */
   function reset() {
     _buffer = [];
     _predictions = null;
     _pushCounter = 0;
+    _epoch = 0;
   }
 
   /**
@@ -241,6 +258,8 @@ var Trend = (function () {
     draw: draw,
     reset: reset,
     resize: _resize,
-    getLength: getLength
+    getLength: getLength,
+    onStrategySwitch: onStrategySwitch,
+    getEpoch: getEpoch
   };
 })();

@@ -24,6 +24,7 @@ var Renderer = (function () {
   var hitAreas = [];
   var _riskData = {};          // 风险热区数据 {eqId: {score, type, label}}
   var _showRiskOverlay = true;  // 是否显示风险热区
+  var _epoch = 0;               // 策略数据版本号
 
   var SIZES = {
     pump: {rw: 0.055, rh: 0.08},
@@ -637,6 +638,14 @@ var Renderer = (function () {
   function setShowRiskOverlay(v) { _showRiskOverlay = !!v; }
   function getFPS() { return perf.fps; }
 
+  function onStrategySwitch(epoch) {
+    _epoch = epoch;
+    // 清除旧策略的风险热区，等待新策略重新计算
+    _riskData = {};
+  }
+
+  function getEpoch() { return _epoch; }
+
   function _rr(x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -654,6 +663,7 @@ var Renderer = (function () {
     setPaused: setPaused,
     setNight: setNight, setSelected: setSelected,
     setRiskData: setRiskData, setShowRiskOverlay: setShowRiskOverlay,
+    onStrategySwitch: onStrategySwitch, getEpoch: getEpoch,
     getFPS: getFPS
   };
 })();

@@ -31,6 +31,7 @@ var Predictor = (function () {
   var _riskScores = {};         // {eqId: {score:0-100, type:'', label:''}}
   var _suggestions = [];        // 调度建议列表
   var _totalSimTime = 0;
+  var _epoch = 0;               // 策略数据版本号
 
   /* ========== 工具函数 ========== */
   function _clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -410,6 +411,35 @@ var Predictor = (function () {
     };
   }
 
+  /**
+   * 策略切换回调 — 清除基于旧策略的分析缓存，保留原始历史
+   */
+  function onStrategySwitch(epoch) {
+    _epoch = epoch;
+    // 清除分析结果（基于策略语境的产出）
+    _riskScores = {};
+    _suggestions = [];
+    // 重置启停计数（新策略下泵组行为模式不同）
+    _pumpStartStopCount = {pump1: 0, pump2: 0, pump3: 0};
+    // 重置压力历史（新策略下的压力基线不同）
+    _pressureHistory = {pump1: [], pump2: [], pump3: []};
+    // 重置效率统计（新策略运行台数/负载不同）
+    _pumpRunningTicks = {pump1: 0, pump2: 0, pump3: 0};
+    _pumpEnergyAccum = {pump1: 0, pump2: 0, pump3: 0};
+    _pumpFlowAccum = {pump1: 0, pump2: 0, pump3: 0};
+    // 重置采样计数器，确保下次 tick 立即采样
+    _sampleCounter = SAMPLE_INTERVAL - 1;
+    // 保留 _history 原始缓冲区 — 时间序列数据本身是客观的
+    // 如有足够历史，立即重新分析
+    if (_history.length >= 5) {
+      _analyze();
+    }
+  }
+
+  function getEpoch() {
+    return _epoch;
+  }
+
   function reset() {
     _sampleCounter = 0;
     _history = [];
@@ -422,6 +452,7 @@ var Predictor = (function () {
     _riskScores = {};
     _suggestions = [];
     _totalSimTime = 0;
+    _epoch = 0;
   }
 
   return {
@@ -432,6 +463,8 @@ var Predictor = (function () {
     getHistory: getHistory,
     getStats: getStats,
     getEnergyTrend: getEnergyTrend,
+    onStrategySwitch: onStrategySwitch,
+    getEpoch: getEpoch,
     reset: reset
   };
 })();
